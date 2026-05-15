@@ -1,0 +1,32 @@
+{
+  "entity": {
+    "vin": "LTEST000000000001",
+    "eid": "001122334455",
+    "gid": "AABBCCDDEEFF",
+    "logicalAddress": "0x0E00"
+  },
+  "network": {
+    "bindAddress": "0.0.0.0",
+    "doipUdpPort": 13400,
+    "doipTcpPort": 13400,
+    "doipTlsPort": 3496,
+    "sourceAddressWhitelist": [
+      "0x0E80"
+    ]
+  },
+  "uds": {
+    "dids": [],
+    "dtcs": [],
+    "routines": [],
+    "sessions": [],
+    "securityAccess": [],
+    "flash": null
+  },
+  "tls": {
+    "enabled": false,
+    "serverCertificatePath": null,
+    "serverPrivateKeyPath": null,
+    "clientCaPath": null,
+    "requireClientCertificate": false
+  }
+}
