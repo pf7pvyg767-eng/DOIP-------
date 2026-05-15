@@ -1,9 +1,12 @@
 using System.Text.Json;
+using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.Core.Configuration;
 
 public sealed class ConfigStore
 {
+    private readonly IRuntimeEventPublisher eventPublisher;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -11,12 +14,18 @@ public sealed class ConfigStore
         WriteIndented = true,
     };
 
+    public ConfigStore(IRuntimeEventPublisher? eventPublisher = null)
+    {
+        this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
+    }
+
     public async Task<SimulatorConfig> LoadAsync(string path, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(path))
         {
             var defaultConfig = SimulatorConfig.CreateDefault();
             ConfigValidator.ThrowIfInvalid(defaultConfig);
+            await PublishConfigEventAsync("config.loaded", "Default simulator configuration loaded.", path, cancellationToken);
             return defaultConfig;
         }
 
@@ -32,6 +41,7 @@ public sealed class ConfigStore
         }
 
         ConfigValidator.ThrowIfInvalid(config);
+        await PublishConfigEventAsync("config.loaded", "Simulator configuration loaded.", path, cancellationToken);
         return config;
     }
 
@@ -50,5 +60,25 @@ public sealed class ConfigStore
 
         await using var stream = File.Create(path);
         await JsonSerializer.SerializeAsync(stream, config, JsonOptions, cancellationToken);
+        await PublishConfigEventAsync("config.saved", "Simulator configuration saved.", path, cancellationToken);
+    }
+
+    private async ValueTask PublishConfigEventAsync(
+        string name,
+        string message,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await eventPublisher.PublishAsync(
+            RuntimeEvent.Create(
+                RuntimeEventLevel.Info,
+                RuntimeEventCategory.Config,
+                name,
+                message,
+                data: new Dictionary<string, object?>
+                {
+                    ["path"] = path,
+                }),
+            cancellationToken);
     }
 }

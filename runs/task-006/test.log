@@ -1,0 +1,41 @@
+﻿task-006 独立 Test & Status 验证日志
+时间：2026-05-15 18:11 Asia/Shanghai
+实现目录：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+
+核心命令结果：
+
+1. openspec validate task-006 --strict
+结果：通过
+关键输出：Change 'task-006' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：已成功生成；2 个警告，0 个错误
+备注：2 个 NU1900 为非阻塞警告，原因是无法加载 https://api.nuget.org/v3/index.json 的包漏洞数据服务索引。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：已通过 - 失败: 0，通过: 22，已跳过: 0，总计: 22，持续时间: 277 ms
+备注：测试 restore 阶段同样出现非阻塞 NU1900 警告。
+
+前端检查：
+未运行 npm。`git status --short` 与文件变更核对显示本 task 未修改 `src/DoipSimulator.WebConsole` 前端文件。
+
+Acceptance criteria 核对：
+- `runtime.started` 与 `runtime.stopped` 能写入 UTF-8 文件日志：通过。`HostRunWritesStartupAndStopEventsToRuntimeLog` 覆盖启动与停止事件落盘；`FileRuntimeEventSink` 使用 UTF-8 JSON Lines 写入。
+- `config.loaded` 与 `config.saved` 能写入 UTF-8 文件日志：通过。`ConfigStorePublishesLoadAndSaveEvents` 覆盖配置加载与保存事件发布，文件 sink 已覆盖 UTF-8 写入。
+- 日志文件每条事件可独立识别或解析：通过。`FileSinkWritesMultipleUtf8JsonLines` 将多事件日志按行拆分并逐行 `JsonDocument.Parse`，验证事件 name。
+- 文件写入失败不导致主流程崩溃，并有可观察的降级错误：通过。`FileSinkCapturesWriteFailureAsDegradedError` 验证 `LastError`；`EventBusDoesNotPropagateSinkFailures` 验证 sink 失败不影响后续 sink 且不向主流程传播。
+
+Scope check：
+- 未新增 Web 实时推送、WebSocket、SSE 或轮询事件推送：通过。
+- 未新增高吞吐优化、队列调优或背压协议：通过。
+- 未新增日志查询 API、日志查询 UI、索引或搜索：通过。
+- 未新增 PCAP 抓包、解析、文件写入、查询或展示：通过；`pcap` 仅作为 `RuntimeEventCategory.Pcap` 分类值存在。
+- 未扩展 DoIP/UDS 协议运行时行为：通过。
+
+可选检查：
+- 未运行 `dotnet format`。该检查已被明确降级为可选项，不作为 task-006 阻塞性验收。
+
+结论：task-006 completed，可进入 push/PR。
+
