@@ -1,0 +1,87 @@
+{
+  "task": "task-004",
+  "status": "completed",
+  "summary": "配置读取与保存 API 已通过独立 Test & Status 验证，可进入 push/PR 步骤。",
+  "verified_at": "2026-05-15T17:30:00+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "commands": [
+    {
+      "command": "openspec validate task-004 --strict",
+      "status": "passed",
+      "summary": "Change 'task-004' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "构建成功，0 个警告，0 个错误。"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "测试通过：16 passed，0 failed，0 skipped。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "GET /api/config 返回当前配置。",
+      "status": "passed",
+      "evidence": "WebApiApplication 映射 GET /api/config 并从 ConfigStore 加载配置；ConfigApiTests.GetConfigReturnsDefaultConfigurationWhenFileIsMissing 覆盖配置缺失时返回有效默认配置。"
+    },
+    {
+      "criterion": "PUT /api/config 保存合法完整 SimulatorConfig。",
+      "status": "passed",
+      "evidence": "WebApiApplication 映射 PUT /api/config，反序列化 SimulatorConfig、校验后调用 ConfigStore.SaveAsync；ConfigApiTests.PutConfigSavesValidConfigurationAndPublishesChangeEvent 覆盖保存和再次读取。"
+    },
+    {
+      "criterion": "非法配置返回 HTTP 400。",
+      "status": "passed",
+      "evidence": "校验失败路径返回 Results.BadRequest；ConfigApiTests.PutInvalidConfigReturnsBadRequestWithFieldErrorsAndDoesNotSaveOrPublish 断言 BadRequest。"
+    },
+    {
+      "criterion": "非法配置响应包含字段级错误和 CONFIG_VALIDATION_FAILED。",
+      "status": "passed",
+      "evidence": "ConfigValidationErrorResponse 包含 Code、Message、Errors；测试断言 CONFIG_VALIDATION_FAILED 以及 entity.vin、entity.logicalAddress、network.doipTcpPort 字段错误。"
+    },
+    {
+      "criterion": "保存成功后发出配置变更事件。",
+      "status": "passed",
+      "evidence": "保存成功后调用 IConfigChangePublisher.Publish(new ConfigChangedEvent(...))；测试断言 RecordingConfigChangePublisher 收到一次事件。"
+    },
+    {
+      "criterion": "保存后重启服务或重建配置存储能加载新配置。",
+      "status": "passed",
+      "evidence": "ConfigApiTests.SavedConfigurationCanBeLoadedByRebuiltConfigStore 使用新的 ConfigStore 从同一路径加载保存后的 VIN 和逻辑地址。"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "未实现局部 PATCH。",
+      "status": "passed",
+      "evidence": "源码与测试中未发现 MapPatch 或 PATCH /api/config；仅新增 GET /api/config 与 PUT /api/config。"
+    },
+    {
+      "item": "未实现权限系统。",
+      "status": "passed",
+      "evidence": "未发现新增认证/授权中间件、Authorize 标记或权限模型。"
+    },
+    {
+      "item": "未实现 UI。",
+      "status": "passed",
+      "evidence": "task-004 未修改 WebConsole UI 文件。"
+    },
+    {
+      "item": "未加入复杂协议热应用或 DoIP/UDS 运行时行为。",
+      "status": "passed",
+      "evidence": "配置变更事件仅为通知契约；未发现新增 DoIP/UDS/DID/DTC/Flash/TLS 运行时行为。"
+    }
+  ],
+  "formatter": {
+    "run": false,
+    "blocking": false,
+    "summary": "按任务规则，dotnet format 不是阻塞性核心验收项；本轮未运行。"
+  },
+  "decision": "task-004 completed; 可进入 push/PR 步骤。"
+}

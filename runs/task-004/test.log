@@ -1,0 +1,73 @@
+task-004 独立 Test & Status 测试报告
+=====================================
+
+验证时间：2026-05-15 17:30:00 +08:00
+验证智能体：测试与状态智能体（71cd944c-68d0-4621-a9d1-e2bc3716bf1b）
+实现目录：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\4a25195e\workdir\DOIP-------
+
+一、核心命令
+------------
+
+1. openspec validate task-004 --strict
+结果：通过
+关键输出：
+Change 'task-004' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：
+已成功生成。
+0 个警告
+0 个错误
+
+3. dotnet test .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：
+已通过! - 失败: 0，通过: 16，已跳过: 0，总计: 16，持续时间: 361 ms - DoipSimulator.Core.Tests.dll (net9.0)
+
+二、Acceptance criteria check
+----------------------------
+
+1. GET /api/config 返回当前配置：通过。
+证据：WebApiApplication 映射 GET /api/config 并调用 ConfigStore.LoadAsync；ConfigApiTests.GetConfigReturnsDefaultConfigurationWhenFileIsMissing 验证配置文件缺失时返回有效默认配置。
+
+2. PUT /api/config 保存合法完整 SimulatorConfig：通过。
+证据：WebApiApplication 映射 PUT /api/config，读取完整 SimulatorConfig、复用 ConfigValidator.Validate，校验通过后调用 ConfigStore.SaveAsync；ConfigApiTests.PutConfigSavesValidConfigurationAndPublishesChangeEvent 验证保存后可再次读取。
+
+3. 非法配置返回 HTTP 400：通过。
+证据：校验失败时返回 Results.BadRequest；ConfigApiTests.PutInvalidConfigReturnsBadRequestWithFieldErrorsAndDoesNotSaveOrPublish 断言 HTTP BadRequest。
+
+4. 非法配置响应包含字段级错误和 CONFIG_VALIDATION_FAILED：通过。
+证据：ConfigValidationErrorResponse.Code 固定为 CONFIG_VALIDATION_FAILED，Errors 包含字段级 Path/Message；测试断言 entity.vin、entity.logicalAddress、network.doipTcpPort。
+
+5. 保存成功后发出配置变更事件：通过。
+证据：保存成功后调用 IConfigChangePublisher.Publish(new ConfigChangedEvent(...))；测试中的 RecordingConfigChangePublisher 断言收到一次事件且 ConfigPath 正确。
+
+6. 保存后重启服务或重建配置存储能加载新配置：通过。
+证据：ConfigApiTests.SavedConfigurationCanBeLoadedByRebuiltConfigStore 在保存后新建 ConfigStore，并从同一配置路径读回新 VIN 与逻辑地址。
+
+三、Scope check
+--------------
+
+1. 未实现局部 PATCH：通过。
+证据：源码中未发现 MapPatch 或 PATCH /api/config；配置端点仅新增 GET /api/config 与 PUT /api/config。
+
+2. 未实现权限系统：通过。
+证据：未发现新增认证/授权中间件、Authorize 标记或权限模型。
+
+3. 未实现 UI：通过。
+证据：task-004 变更未涉及 WebConsole UI 实现。
+
+4. 未加入复杂协议热应用或 DoIP/UDS 运行时行为：通过。
+证据：新增 ConfigChangedEvent / IConfigChangePublisher 仅为保存成功通知契约；未发现新增 DoIP/UDS/DID/DTC/Routine/Session/SecurityAccess/Flash/TLS 运行时行为。
+
+四、dotnet format
+----------------
+
+本轮未执行 dotnet format。依据任务规则，dotnet format 不属于阻塞性核心验收项；formatter 超时、restore 失败、MSBuild workspace 卡住或 BuildHost 卡住均应记录为非阻塞 tooling issue，不阻塞 task-004。
+
+五、结论
+--------
+
+task-004 状态：completed。
+结论：核心验证、acceptance criteria 和 scope check 全部通过，可进入 push/PR 步骤。
