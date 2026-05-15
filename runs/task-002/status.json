@@ -1,0 +1,58 @@
+﻿{
+    "task":  "task-002",
+    "status":  "completed",
+    "checked_at":  "2026-05-15T08:18:47.6008572Z",
+    "commands":  [
+                     {
+                         "name":  "openspec validate task-002 --strict",
+                         "command":  "openspec validate task-002 --strict",
+                         "exit_code":  0,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "dotnet build .\\DoipSimulator.sln -m:1",
+                         "command":  "dotnet build .\\DoipSimulator.sln -m:1",
+                         "exit_code":  0,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "dotnet test .\\DoipSimulator.sln -m:1",
+                         "command":  "dotnet test .\\DoipSimulator.sln -m:1",
+                         "exit_code":  0,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "dotnet run --project .\\src\\DoipSimulator.Host -- --help",
+                         "command":  "dotnet run --project .\\src\\DoipSimulator.Host -- --help",
+                         "exit_code":  0,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "host startup and GET /api/health",
+                         "command":  "dotnet run --project .\\src\\DoipSimulator.Host -- run --listen-address 127.0.0.1 --port 65493",
+                         "exit_code":  0,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "occupied port failure includes port",
+                         "command":  "dotnet run --project .\\src\\DoipSimulator.Host -- run --listen-address 127.0.0.1 --port 65505",
+                         "exit_code":  1,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "process cancellation exits and port can rebind",
+                         "command":  "Start host on 65510, terminate process, bind port again",
+                         "exit_code":  0,
+                         "passed":  true
+                     },
+                     {
+                         "name":  "scope check forbidden capabilities",
+                         "command":  "rg forbidden capability patterns excluding docs/specs/runs plus semantic review of hits",
+                         "exit_code":  0,
+                         "passed":  true
+                     }
+                 ],
+    "acceptance_criteria":  "passed",
+    "scope_check":  "passed",
+    "log":  "runs/task-002/test.log"
+}
