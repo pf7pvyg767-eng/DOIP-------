@@ -1,0 +1,59 @@
+﻿{
+    "task":  "task-008",
+    "status":  "completed",
+    "conclusion":  "task-008 可进入 push/PR",
+    "generated_at":  "2026-05-15T19:09:17.9171578+08:00",
+    "implementation_tree":  "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\6739ab32\\workdir\\DOIP-------",
+    "commands":  [
+                     {
+                         "name":  "openspec validate task-008 --strict",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "summary":  "Change \u0027task-008\u0027 is valid"
+                     },
+                     {
+                         "name":  "dotnet build .\\DoipSimulator.sln -m:1",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "summary":  "Build succeeded with 0 errors; NU1900 NuGet vulnerability feed warnings recorded as non-blocking."
+                     },
+                     {
+                         "name":  "dotnet test .\\DoipSimulator.sln -m:1",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "summary":  "37 passed, 0 failed, 0 skipped; NU1900 warnings recorded as non-blocking."
+                     }
+                 ],
+    "frontend":  {
+                     "npm_run_build":  "not_run",
+                     "reason":  "本 task 无前端文件变更。"
+                 },
+    "formatter":  {
+                      "dotnet_format":  "not_run",
+                      "reason":  "非阻塞可选检查；本轮未执行。"
+                  },
+    "acceptance_criteria":  {
+                                "round_trip":  "passed",
+                                "inverse_version_error":  "passed",
+                                "payload_length_shorter_and_longer_errors":  "passed",
+                                "unknown_payload_type_preserved":  "passed",
+                                "no_network_service_or_socket_dependency":  "passed",
+                                "network_byte_order":  "passed",
+                                "encode_rejects_mismatched_payload_length":  "passed"
+                            },
+    "scope_check":  {
+                        "udp_tcp_socket":  "not_implemented",
+                        "routing_activation_business":  "not_implemented",
+                        "uds_service":  "not_implemented",
+                        "web_ui_extension":  "not_implemented",
+                        "event_stream_extension":  "not_implemented",
+                        "doip_uds_runtime_behavior_change":  "not_modified"
+                    },
+    "warnings":  [
+                     "NU1900 NuGet vulnerability feed access warnings during build/test; non-blocking because build/test succeeded."
+                 ],
+    "artifacts":  [
+                      "runs/task-008/status.json",
+                      "runs/task-008/test.log"
+                  ]
+}

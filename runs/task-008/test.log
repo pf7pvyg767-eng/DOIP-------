@@ -1,0 +1,87 @@
+﻿task-008 independent Test & Status verification
+Started: 2026-05-15T19:09:56.9801442+08:00
+Workdir: C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+
+===== openspec validate task-008 --strict =====
+Command: openspec validate task-008 --strict
+Change 'task-008' is valid
+ExitCode: 0
+
+===== dotnet build .\DoipSimulator.sln -m:1 =====
+Command: dotnet build .\DoipSimulator.sln -m:1
+  正在确定要还原的项目…
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\DoipSimulator.Core.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。 [C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\DoipSimulator.sln]
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\DoipSimulator.Protocols.Doip.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: The SSL connection could not be established, see inner exception. [C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\DoipSimulator.sln]
+  所有项目均是最新的，无法还原。
+  DoipSimulator.Core -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.Core\bin\Debug\net9.0\DoipSimulator.Core.dll
+  DoipSimulator.WebApi -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.WebApi\bin\Debug\net9.0\DoipSimulator.WebApi.dll
+  DoipSimulator.Host -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.Host\bin\Debug\net9.0\doip-simulator.dll
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\DoipSimulator.Core.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+  DoipSimulator.Core.Tests -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\bin\Debug\net9.0\DoipSimulator.Core.Tests.dll
+  DoipSimulator.Protocols.Doip -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.Protocols.Doip\bin\Debug\net9.0\DoipSimulator.Protocols.Doip.dll
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\DoipSimulator.Protocols.Doip.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: The SSL connection could not be established, see inner exception.
+  DoipSimulator.Protocols.Doip.Tests -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\bin\Debug\net9.0\DoipSimulator.Protocols.Doip.Tests.dll
+
+已成功生成。
+
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\DoipSimulator.Core.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。 [C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\DoipSimulator.sln]
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\DoipSimulator.Protocols.Doip.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: The SSL connection could not be established, see inner exception. [C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\DoipSimulator.sln]
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\DoipSimulator.Core.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\DoipSimulator.Protocols.Doip.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: The SSL connection could not be established, see inner exception.
+    4 个警告
+    0 个错误
+
+已用时间 00:00:01.65
+ExitCode: 0
+
+===== dotnet test .\DoipSimulator.sln -m:1 =====
+Command: dotnet test .\DoipSimulator.sln -m:1
+  正在确定要还原的项目…
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\DoipSimulator.Protocols.Doip.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: The SSL connection could not be established, see inner exception. [C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\DoipSimulator.sln]
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\DoipSimulator.Core.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。 [C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\DoipSimulator.sln]
+  所有项目均是最新的，无法还原。
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\DoipSimulator.Core.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+  DoipSimulator.Core -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.Core\bin\Debug\net9.0\DoipSimulator.Core.dll
+  DoipSimulator.WebApi -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.WebApi\bin\Debug\net9.0\DoipSimulator.WebApi.dll
+  DoipSimulator.Host -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.Host\bin\Debug\net9.0\doip-simulator.dll
+  DoipSimulator.Core.Tests -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\bin\Debug\net9.0\DoipSimulator.Core.Tests.dll
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Core.Tests\bin\Debug\net9.0\DoipSimulator.Core.Tests.dll (.NETCoreApp,Version=v9.0)的测试运行
+VSTest 版本 17.14.1 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+
+已通过! - 失败:     0，通过:    28，已跳过:     0，总计:    28，持续时间: 250 ms - DoipSimulator.Core.Tests.dll (net9.0)
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\DoipSimulator.Protocols.Doip.Tests.csproj : warning NU1900: 获取包漏洞数据时出错: The SSL connection could not be established, see inner exception.
+  DoipSimulator.Protocols.Doip -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\src\DoipSimulator.Protocols.Doip\bin\Debug\net9.0\DoipSimulator.Protocols.Doip.dll
+  DoipSimulator.Protocols.Doip.Tests -> C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\bin\Debug\net9.0\DoipSimulator.Protocols.Doip.Tests.dll
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\tests\DoipSimulator.Protocols.Doip.Tests\bin\Debug\net9.0\DoipSimulator.Protocols.Doip.Tests.dll (.NETCoreApp,Version=v9.0)的测试运行
+VSTest 版本 17.14.1 (x64)
+
+正在启动测试执行，请稍候...
+总共 1 个测试文件与指定模式相匹配。
+
+已通过! - 失败:     0，通过:     9，已跳过:     0，总计:     9，持续时间: 29 ms - DoipSimulator.Protocols.Doip.Tests.dll (net9.0)
+ExitCode: 0
+
+===== Acceptance Criteria Check =====
+PASS: 合法 DoIP frame 可正确 encode/decode round-trip。
+PASS: inverse version 错误返回 InverseVersionMismatch 明确错误。
+PASS: payload length 与实际长度不一致返回 PayloadLengthMismatch，覆盖 declared shorter 和 declared longer。
+PASS: 未知 payload type 保留 raw ushort，并通过 IsKnown/KnownName 上报，不导致 codec 失败。
+PASS: codec 测试仅使用内存 byte array，不启动网络服务、不绑定端口、不依赖 socket。
+PASS: 多字节 payload type 和 payload length 使用 BinaryPrimitives big-endian 网络字节序。
+PASS: encode 对 payload length 元数据不一致返回 InvalidEncodeInput，不静默输出非法 frame。
+
+===== Scope Check =====
+PASS: 未实现 UDP/TCP socket。
+PASS: 未实现 routing activation 业务，仅定义 payload type 常量。
+PASS: 未实现 UDS 服务。
+PASS: 未扩展 Web UI。
+PASS: 未扩展事件流。
+PASS: 未修改 DoIP/UDS runtime 行为。
+PASS: 本 task 未发现前端文件变更，未运行 npm。
+INFO: build/test 出现 NU1900 NuGet 漏洞数据源访问警告，命令 exit code 为 0，按规则记录为非阻塞警告。
+INFO: 未运行 dotnet format；该项为带超时的非阻塞可选检查。
+
+Finished: 2026-05-15T19:10:03.7847316+08:00
