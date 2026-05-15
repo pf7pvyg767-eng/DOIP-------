@@ -1,9 +1,12 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Observability.Logging;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Host;
+using DoipSimulator.Protocols.Doip;
+using DoipSimulator.Transport.Udp;
 using DoipSimulator.WebApi;
 using Microsoft.Extensions.Hosting;
 
@@ -11,7 +14,11 @@ return await CliEntryPoint.RunAsync(args, Console.Out, Console.Error);
 
 namespace DoipSimulator.Host
 {
-    public sealed record HostRuntimeOptions(string ListenAddress, int Port, string? EventLogPath = null)
+    public sealed record HostRuntimeOptions(
+        string ListenAddress,
+        int Port,
+        string? EventLogPath = null,
+        string? ConfigPath = null)
     {
         public const string DefaultListenAddress = "127.0.0.1";
         public const int DefaultPort = 5080;
@@ -23,6 +30,13 @@ namespace DoipSimulator.Host
             return string.IsNullOrWhiteSpace(EventLogPath)
                 ? Path.Combine(AppContext.BaseDirectory, "runtime-events.log")
                 : EventLogPath;
+        }
+
+        public string ResolveConfigPath()
+        {
+            return string.IsNullOrWhiteSpace(ConfigPath)
+                ? Path.Combine(AppContext.BaseDirectory, "simulator-config.json")
+                : ConfigPath;
         }
     }
 
@@ -109,6 +123,17 @@ namespace DoipSimulator.Host
                     continue;
                 }
 
+                if (option is "--config")
+                {
+                    if (!TryReadValue(args, ref index, option, out var configPath, out var error))
+                    {
+                        return new ParseResult(null, error);
+                    }
+
+                    options = options with { ConfigPath = configPath };
+                    continue;
+                }
+
                 return new ParseResult(null, $"Unknown run option: {option}");
             }
 
@@ -152,6 +177,8 @@ namespace DoipSimulator.Host
                 await using var eventSink = new FileRuntimeEventSink(logPath);
                 var eventHub = new RuntimeEventHub();
                 var eventPublisher = new RuntimeEventBus([eventSink, eventHub]);
+                var config = await new ConfigStore(eventPublisher).LoadAsync(options.ResolveConfigPath(), shutdown.Token);
+                await using var udpServer = CreateUdpServer(config, eventPublisher);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
@@ -160,6 +187,7 @@ namespace DoipSimulator.Host
                     runtimeEventHub: eventHub);
 
                 await app.StartAsync(shutdown.Token);
+                await udpServer.StartAsync(shutdown.Token);
                 await eventPublisher.PublishAsync(
                     RuntimeEvent.Create(
                         RuntimeEventLevel.Info,
@@ -170,6 +198,7 @@ namespace DoipSimulator.Host
                         {
                             ["listenAddress"] = options.ListenAddress,
                             ["port"] = options.Port,
+                            ["doipUdpPort"] = udpServer.BoundPort,
                             ["startedAt"] = startedAt,
                         }),
                     shutdown.Token);
@@ -247,8 +276,34 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --listen-address <address>  WebApi listen address. Default: 127.0.0.1");
             writer.WriteLine("  --port <port>               WebApi listen port. Default: 5080");
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
+            writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime does not load full ECU configuration or start DoIP, UDS, DID, DTC, Flash, TLS, PCAP, database, or external services.");
+            writer.WriteLine("The runtime starts the WebApi and UDP DoIP vehicle discovery only; it does not start TCP, routing activation, UDS, TLS, PCAP, database, or external services.");
+        }
+
+        private static UdpDoipServer CreateUdpServer(
+            SimulatorConfig config,
+            IRuntimeEventPublisher eventPublisher)
+        {
+            var bindAddress = IPAddress.Parse(config.Network.BindAddress);
+            var targetAddress = IPAddress.Parse(config.Network.VehicleAnnouncementTargetAddress);
+            var options = new UdpDoipServerOptions(
+                bindAddress,
+                config.Network.DoipUdpPort,
+                config.Network.VehicleAnnouncementEnabled,
+                TimeSpan.FromMilliseconds(config.Network.VehicleAnnouncementIntervalMilliseconds),
+                new IPEndPoint(targetAddress, config.Network.VehicleAnnouncementTargetPort));
+            var entityInfo = DoipEntityInfo.Create(
+                config.Entity.Vin,
+                config.Entity.Eid,
+                config.Entity.Gid,
+                config.Entity.LogicalAddress);
+            var handler = new VehicleIdentificationUdpHandler(
+                entityInfo,
+                new DoipCodec(),
+                eventPublisher);
+
+            return new UdpDoipServer(options, handler);
         }
     }
 

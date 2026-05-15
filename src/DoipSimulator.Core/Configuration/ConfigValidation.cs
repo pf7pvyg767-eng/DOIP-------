@@ -54,6 +54,12 @@ public static partial class ConfigValidator
         ValidatePort(config.Network?.DoipUdpPort, "network.doipUdpPort", errors);
         ValidatePort(config.Network?.DoipTcpPort, "network.doipTcpPort", errors);
         ValidatePort(config.Network?.DoipTlsPort, "network.doipTlsPort", errors);
+        ValidatePort(config.Network?.VehicleAnnouncementTargetPort, "network.vehicleAnnouncementTargetPort", errors);
+        ValidateVehicleAnnouncementInterval(config.Network?.VehicleAnnouncementIntervalMilliseconds, errors);
+        ValidateIpAddress(
+            config.Network?.VehicleAnnouncementTargetAddress,
+            "network.vehicleAnnouncementTargetAddress",
+            errors);
 
         var whitelist = config.Network?.SourceAddressWhitelist;
         if (whitelist is null)
@@ -132,6 +138,31 @@ public static partial class ConfigValidator
             errors.Add(new ConfigValidationError(
                 field,
                 "Port must be between 1 and 65535."));
+        }
+    }
+
+    private static void ValidateVehicleAnnouncementInterval(
+        int? intervalMilliseconds,
+        List<ConfigValidationError> errors)
+    {
+        if (intervalMilliseconds is null or < 100)
+        {
+            errors.Add(new ConfigValidationError(
+                "network.vehicleAnnouncementIntervalMilliseconds",
+                "Vehicle announcement interval must be at least 100 milliseconds."));
+        }
+    }
+
+    private static void ValidateIpAddress(
+        string? value,
+        string field,
+        List<ConfigValidationError> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !System.Net.IPAddress.TryParse(value, out _))
+        {
+            errors.Add(new ConfigValidationError(
+                field,
+                "IP address must be a valid IPv4 or IPv6 address."));
         }
     }
 

@@ -1,15 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\DoipSimulator.Core\DoipSimulator.Core.csproj" />
     <ProjectReference Include="..\DoipSimulator.Protocols.Doip\DoipSimulator.Protocols.Doip.csproj" />
-    <ProjectReference Include="..\DoipSimulator.Transport\DoipSimulator.Transport.csproj" />
-    <ProjectReference Include="..\DoipSimulator.WebApi\DoipSimulator.WebApi.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <AssemblyName>doip-simulator</AssemblyName>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using DoipSimulator.Core.Configuration;
 using DoipSimulator.Host;
 using DoipSimulator.WebApi;
 using Microsoft.AspNetCore.Builder;
@@ -79,10 +80,15 @@ public class RuntimeStartupTests
     {
         var port = GetFreeLoopbackPort();
         var logPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "runtime-events.log");
+        var configPath = Path.Combine(Path.GetDirectoryName(logPath)!, "simulator-config.json");
+        var config = SimulatorConfig.CreateDefault();
+        config.Network.BindAddress = "127.0.0.1";
+        config.Network.DoipUdpPort = GetFreeUdpPort();
+        await new ConfigStore().SaveAsync(configPath, config);
         using var cancellation = new CancellationTokenSource();
 
         var runTask = CliEntryPoint.RunAsync(
-            ["run", "--listen-address", "127.0.0.1", "--port", port.ToString(), "--event-log", logPath],
+            ["run", "--listen-address", "127.0.0.1", "--port", port.ToString(), "--event-log", logPath, "--config", configPath],
             TextWriter.Null,
             TextWriter.Null,
             cancellation.Token);
@@ -109,6 +115,12 @@ public class RuntimeStartupTests
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    private static int GetFreeUdpPort()
+    {
+        using var udpClient = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        return ((IPEndPoint)udpClient.Client.LocalEndPoint!).Port;
     }
 
     private static async Task WaitForLogContentAsync(string path, string expected)

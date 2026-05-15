@@ -27,6 +27,10 @@ public sealed class SimulatorConfig
                 DoipUdpPort = 13400,
                 DoipTcpPort = 13400,
                 DoipTlsPort = 3496,
+                VehicleAnnouncementEnabled = false,
+                VehicleAnnouncementIntervalMilliseconds = 1000,
+                VehicleAnnouncementTargetAddress = "255.255.255.255",
+                VehicleAnnouncementTargetPort = 13400,
                 SourceAddressWhitelist = ["0x0E80"],
             },
             Uds = new UdsConfig
@@ -70,6 +74,14 @@ public sealed class NetworkConfig
     public int DoipTcpPort { get; set; }
 
     public int DoipTlsPort { get; set; }
+
+    public bool VehicleAnnouncementEnabled { get; set; }
+
+    public int VehicleAnnouncementIntervalMilliseconds { get; set; } = 1000;
+
+    public string VehicleAnnouncementTargetAddress { get; set; } = "255.255.255.255";
+
+    public int VehicleAnnouncementTargetPort { get; set; } = 13400;
 
     public List<string> SourceAddressWhitelist { get; set; } = [];
 }

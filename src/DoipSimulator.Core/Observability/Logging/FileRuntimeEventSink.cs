@@ -38,7 +38,15 @@ public sealed class FileRuntimeEventSink : IRuntimeEventSink, IAsyncDisposable
                 }
 
                 var line = JsonSerializer.Serialize(runtimeEvent, JsonOptions) + Environment.NewLine;
-                await File.AppendAllTextAsync(path, line, Utf8NoBom, cancellationToken);
+                await using var stream = new FileStream(
+                    path,
+                    FileMode.Append,
+                    FileAccess.Write,
+                    FileShare.ReadWrite,
+                    bufferSize: 4096,
+                    useAsync: true);
+                await using var writer = new StreamWriter(stream, Utf8NoBom);
+                await writer.WriteAsync(line.AsMemory(), cancellationToken);
             }
             finally
             {
