@@ -1,3 +1,4 @@
+using System.Net.WebSockets;
 using System.Text.Json;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.RuntimeEvents;
@@ -28,16 +29,20 @@ public static class WebApiApplication
         WebApiRuntimeOptions options,
         ConfigStore? configStore = null,
         IConfigChangePublisher? configChangePublisher = null,
-        IRuntimeEventPublisher? runtimeEventPublisher = null)
+        IRuntimeEventPublisher? runtimeEventPublisher = null,
+        RuntimeEventHub? runtimeEventHub = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
 
         var app = builder.Build();
-        var eventPublisher = runtimeEventPublisher ?? NullRuntimeEventPublisher.Instance;
+        var eventHub = runtimeEventHub ?? new RuntimeEventHub();
+        var eventPublisher = runtimeEventPublisher ?? new RuntimeEventBus([eventHub]);
         var store = configStore ?? new ConfigStore(eventPublisher);
         var publisher = configChangePublisher ?? NullConfigChangePublisher.Instance;
         var configPath = ResolveConfigPath(options.ConfigPath);
+
+        app.UseWebSockets();
 
         app.MapGet("/api/health", () =>
             Results.Ok(new HealthResponse(
@@ -77,7 +82,132 @@ public static class WebApiApplication
             return Results.Ok(config);
         });
 
+        app.MapGet("/api/events/recent", (
+            int? limit,
+            string? category) =>
+        {
+            var parsedCategory = ParseCategory(category);
+            if (!string.IsNullOrWhiteSpace(category) && parsedCategory is null)
+            {
+                return Results.BadRequest(new
+                {
+                    code = "INVALID_EVENT_CATEGORY",
+                    message = $"Unknown event category: {category}.",
+                });
+            }
+
+            return Results.Ok(eventHub.GetRecent(limit, parsedCategory));
+        });
+
+        app.Map("/api/events/stream", async (HttpContext context) =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsync("WebSocket connection required.", context.RequestAborted);
+                return;
+            }
+
+            using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+            using var subscription = eventHub.Subscribe();
+            using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            var cancellationToken = streamCts.Token;
+            var receiveTask = WatchClientDisconnectAsync(webSocket, streamCts);
+
+            try
+            {
+                await foreach (var runtimeEvent in subscription.Events.ReadAllAsync(cancellationToken))
+                {
+                    if (webSocket.State is not WebSocketState.Open)
+                    {
+                        break;
+                    }
+
+                    var payload = JsonSerializer.SerializeToUtf8Bytes(runtimeEvent, JsonOptions);
+                    await webSocket.SendAsync(
+                        payload,
+                        WebSocketMessageType.Text,
+                        WebSocketMessageFlags.EndOfMessage,
+                        cancellationToken);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (WebSocketException)
+            {
+            }
+            finally
+            {
+                await streamCts.CancelAsync();
+                try
+                {
+                    await receiveTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (WebSocketException)
+                {
+                }
+            }
+
+            if (webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                await webSocket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "Event stream closed.",
+                    CancellationToken.None);
+            }
+        });
+
         return app;
+    }
+
+    private static async Task WatchClientDisconnectAsync(
+        WebSocket webSocket,
+        CancellationTokenSource streamCts)
+    {
+        var buffer = new byte[1024];
+        try
+        {
+            while (!streamCts.IsCancellationRequested &&
+                   webSocket.State is WebSocketState.Open or WebSocketState.CloseSent)
+            {
+                var result = await webSocket.ReceiveAsync(buffer, streamCts.Token);
+                if (result.MessageType is WebSocketMessageType.Close)
+                {
+                    await streamCts.CancelAsync();
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (streamCts.IsCancellationRequested)
+        {
+        }
+        catch (WebSocketException)
+        {
+            await streamCts.CancelAsync();
+        }
+    }
+
+    private static RuntimeEventCategory? ParseCategory(string? category)
+    {
+        if (string.IsNullOrWhiteSpace(category))
+        {
+            return null;
+        }
+
+        foreach (var value in Enum.GetValues<RuntimeEventCategory>())
+        {
+            var jsonName = JsonNamingPolicy.CamelCase.ConvertName(value.ToString());
+            if (string.Equals(jsonName, category, StringComparison.OrdinalIgnoreCase))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     private static string ResolveConfigPath(string? configuredPath)

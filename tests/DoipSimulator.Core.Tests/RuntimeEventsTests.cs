@@ -101,6 +101,43 @@ public class RuntimeEventsTests
     }
 
     [Fact]
+    public async Task RuntimeEventHubKeepsBoundedNewestEvents()
+    {
+        var hub = new RuntimeEventHub(capacity: 3);
+
+        for (var index = 1; index <= 5; index++)
+        {
+            await hub.WriteAsync(RuntimeEvent.Create(
+                RuntimeEventLevel.Info,
+                RuntimeEventCategory.System,
+                $"event.{index}",
+                $"Event {index}."));
+        }
+
+        var recent = hub.GetRecent(limit: 10);
+
+        Assert.Equal(3, recent.Count);
+        Assert.Equal(["event.3", "event.4", "event.5"], recent.Select(item => item.Name).ToArray());
+    }
+
+    [Fact]
+    public async Task RuntimeEventHubReturnsLatestLimitedCategoryEvents()
+    {
+        var hub = new RuntimeEventHub(capacity: 10);
+
+        await hub.WriteAsync(RuntimeEvent.Create(RuntimeEventLevel.Info, RuntimeEventCategory.System, "system.1", "System."));
+        await hub.WriteAsync(RuntimeEvent.Create(RuntimeEventLevel.Info, RuntimeEventCategory.Doip, "doip.1", "DoIP."));
+        await hub.WriteAsync(RuntimeEvent.Create(RuntimeEventLevel.Warning, RuntimeEventCategory.Doip, "doip.2", "DoIP."));
+        await hub.WriteAsync(RuntimeEvent.Create(RuntimeEventLevel.Info, RuntimeEventCategory.Config, "config.1", "Config."));
+
+        var recent = hub.GetRecent(limit: 1, RuntimeEventCategory.Doip);
+
+        Assert.Single(recent);
+        Assert.Equal("doip.2", recent[0].Name);
+        Assert.Equal(RuntimeEventCategory.Doip, recent[0].Category);
+    }
+
+    [Fact]
     public async Task ConfigStorePublishesLoadAndSaveEvents()
     {
         var publisher = new RecordingRuntimeEventPublisher();

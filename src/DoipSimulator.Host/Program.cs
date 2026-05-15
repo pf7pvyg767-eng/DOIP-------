@@ -150,12 +150,14 @@ namespace DoipSimulator.Host
             {
                 var logPath = options.ResolveEventLogPath();
                 await using var eventSink = new FileRuntimeEventSink(logPath);
-                var eventPublisher = new RuntimeEventBus([eventSink]);
+                var eventHub = new RuntimeEventHub();
+                var eventPublisher = new RuntimeEventBus([eventSink, eventHub]);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
                     new WebApiRuntimeOptions(options.ListenAddress, options.Port, startedAt),
-                    runtimeEventPublisher: eventPublisher);
+                    runtimeEventPublisher: eventPublisher,
+                    runtimeEventHub: eventHub);
 
                 await app.StartAsync(shutdown.Token);
                 await eventPublisher.PublishAsync(

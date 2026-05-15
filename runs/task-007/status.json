@@ -1,0 +1,103 @@
+﻿{
+  "task": "task-007",
+  "status": "completed",
+  "completed_at": "2026-05-15T18:51:56+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "implementation_tree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\4a25195e\\workdir\\DOIP-------",
+  "commands": [
+    {
+      "command": "openspec validate task-007 --strict",
+      "status": "passed",
+      "summary": "Change 'task-007' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "0 warnings, 0 errors"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "28 passed, 0 failed, 0 skipped"
+    },
+    {
+      "command": "npm run build",
+      "working_directory": "src\\DoipSimulator.WebConsole",
+      "status": "passed",
+      "summary": "vue-tsc --noEmit && vite build completed successfully"
+    }
+  ],
+  "frontend": {
+    "changed": true,
+    "npm_run": true,
+    "summary": "WebConsole build passed; event log panel supports recent-event loading, WebSocket subscription, UI cap, level filter, and category filter."
+  },
+  "acceptance_criteria": [
+    {
+      "criterion": "GET /api/events/recent?limit=200&category=doip returns latest N events and supports category filtering",
+      "status": "passed",
+      "evidence": "EventStreamApiTests.RecentEventsApiReturnsLatestLimitedEvents and RecentEventsApiFiltersByCategory; WebApiApplication maps /api/events/recent with bounded limit and category parsing."
+    },
+    {
+      "criterion": "WS /api/events/stream pushes events to clients after publish",
+      "status": "passed",
+      "evidence": "EventStreamApiTests.WebSocketClientReceivesPublishedRuntimeEvent; WebApiApplication subscribes to RuntimeEventHub and sends RuntimeEvent JSON over WebSocket."
+    },
+    {
+      "criterion": "Client disconnect and reconnect does not cause service failure",
+      "status": "passed",
+      "evidence": "EventStreamApiTests.WebSocketDisconnectDoesNotPreventReconnect; stream cleanup catches cancellation/WebSocket exceptions and disposes subscription."
+    },
+    {
+      "criterion": "UI keeps at most configured event cap such as 1000 events",
+      "status": "passed",
+      "evidence": "EventLogPanel.vue uses maxEvents = 1000 and slices merged events to the newest maxEvents; RuntimeEventHub default capacity is also 1000."
+    },
+    {
+      "criterion": "Frontend log view supports level and category filtering",
+      "status": "passed",
+      "evidence": "EventLogPanel.vue exposes levelFilter/categoryFilter selects and visibleEvents filters by event.level and event.category."
+    },
+    {
+      "criterion": "Startup event is visible after page open",
+      "status": "passed",
+      "evidence": "Host publishes runtime.started into the shared RuntimeEventHub after app start; EventLogPanel loads /api/events/recent on mount and after socket open."
+    },
+    {
+      "criterion": "Saving configuration shows config event in the log view in real time",
+      "status": "passed",
+      "evidence": "ConfigStore publishes config.saved through the runtime event publisher used by WebApi; EventLogPanel appends WebSocket messages from /api/events/stream."
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "No historical log search, file-log indexing, full-text search, or paginated search",
+      "status": "passed"
+    },
+    {
+      "item": "No complex charts",
+      "status": "passed"
+    },
+    {
+      "item": "No 100M throughput guarantee or implementation",
+      "status": "passed"
+    },
+    {
+      "item": "No DoIP/UDS runtime behavior expansion",
+      "status": "passed"
+    },
+    {
+      "item": "No auth, tenant, or external observability integration",
+      "status": "passed"
+    }
+  ],
+  "lint": {
+    "dotnet_format": "not_run",
+    "reason": "Optional non-blocking check for this task; core validation, build, tests, npm build, acceptance criteria, and scope check passed."
+  },
+  "decision": "task-007 可进入 push/PR"
+}
+
