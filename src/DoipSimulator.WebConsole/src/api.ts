@@ -33,6 +33,30 @@ export interface DashboardState {
   config: ConfigSummary;
 }
 
+export type RuntimeEventLevel = "info" | "warning" | "error";
+
+export type RuntimeEventCategory =
+  | "system"
+  | "config"
+  | "connection"
+  | "doip"
+  | "uds"
+  | "state"
+  | "fault"
+  | "tls"
+  | "pcap";
+
+export interface RuntimeEvent {
+  id: string;
+  timestamp: string;
+  level: RuntimeEventLevel;
+  category: RuntimeEventCategory;
+  name: string;
+  message: string;
+  connectionId?: string | null;
+  data?: Record<string, unknown> | null;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -59,6 +83,21 @@ async function getJson<T>(path: string): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+export async function loadRecentEvents(limit = 200, category = ""): Promise<RuntimeEvent[]> {
+  const parameters = new URLSearchParams();
+  parameters.set("limit", limit.toString());
+  if (category) {
+    parameters.set("category", category);
+  }
+
+  return getJson<RuntimeEvent[]>(`/api/events/recent?${parameters.toString()}`);
+}
+
+export function createRuntimeEventSocket(): WebSocket {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return new WebSocket(`${protocol}//${window.location.host}/api/events/stream`);
 }
 
 function toConfigSummary(config: SimulatorConfig): ConfigSummary {

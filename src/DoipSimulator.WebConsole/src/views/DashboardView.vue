@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { loadDashboardState, type DashboardState } from "../api";
+import EventLogPanel from "../components/EventLogPanel.vue";
 import StatusPanel from "../components/StatusPanel.vue";
 
 const state = ref<DashboardState | null>(null);
@@ -48,6 +49,8 @@ async function load(): Promise<void> {
 
     <template v-else-if="state">
       <StatusPanel :health="state.health" />
+
+      <EventLogPanel />
 
       <section class="section" aria-labelledby="config-summary-title">
         <div class="section__heading">
