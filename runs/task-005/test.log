@@ -1,0 +1,93 @@
+﻿task-005 独立 Test & Status 测试报告
+=====================================
+
+验证时间：2026-05-15 17:52:39 +08:00
+验证智能体：测试与状态智能体（71cd944c-68d0-4621-a9d1-e2bc3716bf1b）
+实现目录：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+基线分支：agent/task-004-config-api
+验证对象：task-005 Vue 控制台基础页面，只读展示服务状态与当前配置摘要。
+
+一、核心命令
+------------
+
+1. openspec validate task-005 --strict
+结果：通过
+关键输出：
+Change 'task-005' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：
+已成功生成。
+2 个警告
+0 个错误
+说明：警告为 NU1900，无法访问 https://api.nuget.org/v3/index.json 获取包漏洞数据；这是非阻塞 NuGet 漏洞源访问警告，不影响 build 结果。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：
+已通过! - 失败: 0，通过: 16，已跳过: 0，总计: 16，持续时间: 503 ms - DoipSimulator.Core.Tests.dll (net9.0)
+
+4. cd .\src\DoipSimulator.WebConsole; npm install; npm run build
+结果：通过
+关键输出：
+npm install: up to date, audited 46 packages, found 0 vulnerabilities
+npm run build: vue-tsc --noEmit && vite build 成功，16 modules transformed，dist 产物生成。
+说明：npm run build 在沙箱内先因 Windows EPERM spawn 失败，失败点为 Vite/esbuild 启动子进程；按权限规则在沙箱外重跑后通过。该 tooling/environment 问题不代表实现失败。
+
+5. 启动 URL smoke check
+命令：npm run dev -- --host 127.0.0.1 --port 5174，并访问 http://127.0.0.1:5174/
+结果：通过
+关键输出：
+HTTP 200
+App mount point found
+说明：dev server 在沙箱内同样受 Vite/esbuild EPERM spawn 影响；沙箱外启动成功并完成 smoke check，随后已停止进程。
+
+二、前端测试与 lint/type check
+-----------------------------
+
+- src/DoipSimulator.WebConsole/package.json 当前没有 test 脚本。
+- 按任务要求，仅记录为现有项目约束；本轮未新增前端测试框架，未扩大 scope。
+- package.json 当前也没有独立 lint 脚本。
+- TypeScript 类型检查由 npm run build 中的 vue-tsc --noEmit 覆盖，已通过。
+- dotnet format 不是本 task 的阻塞性核心验收项；本轮未执行。
+
+三、Acceptance criteria check
+----------------------------
+
+1. 启动 URL 可看到 Web 控制台：通过。
+证据：App.vue 直接挂载 DashboardView；Vite dev server smoke check 返回 HTTP 200，并在 HTML 中找到 Vue app mount point。
+
+2. 服务状态、启动时间、版本展示：通过。
+证据：StatusPanel.vue 展示 Status、Started at、Version；Started at 会格式化时间，缺失值显示 Unavailable。
+
+3. VIN/EID/GID/逻辑地址/端口展示：通过。
+证据：DashboardView.vue 展示 VIN、EID、GID、Logical address、DoIP UDP port、DoIP TCP port、DoIP TLS port；api.ts 将 SimulatorConfig 投影为只读 ConfigSummary。
+
+4. 加载态和错误态存在：通过。
+证据：DashboardView.vue 使用 isLoading 显示 Loading 面板；API 失败时显示 Backend unavailable 错误面板，并设置 role="alert"。
+
+5. 刷新会重新请求数据：通过。
+证据：DashboardView.vue 在 onMounted(load) 调用 loadDashboardState；api.ts 每次 loadDashboardState 都 fetch /api/health 与 /api/config。页面刷新会重新挂载组件并重新请求数据。
+
+四、Scope check
+--------------
+
+1. 未实现配置编辑：通过。
+证据：WebConsole src 中未发现 input/textarea/select/save/PUT/PATCH/POST/DELETE；api.ts 仅执行 GET fetch。
+
+2. 未实现日志流：通过。
+证据：WebConsole src 中未发现 EventSource、WebSocket 或日志流视图。
+
+3. 未实现协议报文列表：通过。
+证据：WebConsole src 中未发现协议报文列表视图或相关交互入口。
+
+4. 未新增 DoIP/UDS 运行时行为：通过。
+证据：task-005 改动集中在 WebConsole 只读展示与 OpenSpec；未新增后端 DoIP/UDS 运行时行为或 API 契约。
+
+五、结论
+--------
+
+task-005 状态：completed。
+结论：核心验证、前端构建、启动 URL smoke check、acceptance criteria 和 scope check 全部通过；task-005 可进入 push/PR 步骤。
+
