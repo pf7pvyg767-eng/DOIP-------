@@ -1,0 +1,82 @@
+{
+  "task": "task-003",
+  "status": "completed",
+  "verified_at": "2026-05-15T09:10:05Z",
+  "verifier": "Test & Status Agent",
+  "commands": [
+    {
+      "name": "OpenSpec strict validation",
+      "command": "openspec validate task-003 --strict",
+      "status": "passed",
+      "summary": "Change 'task-003' is valid"
+    },
+    {
+      "name": "Build",
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "0 warnings, 0 errors"
+    },
+    {
+      "name": "Tests",
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "12 passed, 0 failed, 0 skipped"
+    },
+    {
+      "name": "Optional formatter check",
+      "command": "dotnet format .\\DoipSimulator.sln --verify-no-changes --verbosity minimal --no-restore",
+      "status": "tooling_issue",
+      "summary": "Non-blocking formatter tooling issue: dotnet format failed while connecting to the Roslyn/MSBuild BuildHost named pipe (UnauthorizedAccessException). Per task rules, formatter restore failures, timeouts, or BuildHost hangs do not block task completion."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "Default configuration can be generated and passes validation.",
+      "status": "passed",
+      "evidence": "ConfigTests.MissingConfigurationReturnsDefaultThatValidates"
+    },
+    {
+      "criterion": "Valid JSON configuration loads into strongly typed objects.",
+      "status": "passed",
+      "evidence": "ConfigTests.ValidJsonLoadsIntoStronglyTypedConfiguration"
+    },
+    {
+      "criterion": "Invalid VIN, invalid port, and invalid logical address return clear errors.",
+      "status": "passed",
+      "evidence": "ConfigTests.InvalidFieldsReturnClearFieldSpecificErrors"
+    },
+    {
+      "criterion": "Save and reload preserves data.",
+      "status": "passed",
+      "evidence": "ConfigTests.SaveAndReloadPreservesConfigurationData"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "No YAML support.",
+      "status": "passed"
+    },
+    {
+      "item": "No ODX/PDX import.",
+      "status": "passed"
+    },
+    {
+      "item": "No web editing or business UI.",
+      "status": "passed"
+    },
+    {
+      "item": "No configuration version migration.",
+      "status": "passed"
+    },
+    {
+      "item": "No DoIP/UDS runtime behavior.",
+      "status": "passed"
+    },
+    {
+      "item": "DID, DTC, Routine, Session, SecurityAccess, Flash, and TLS remain data-only configuration contracts.",
+      "status": "passed"
+    }
+  ],
+  "formatter_policy": "dotnet format is optional for task-003 and must use an explicit timeout when run. Formatter tooling failures are recorded and do not block completion when core verification passes.",
+  "decision": "task-003 completed; may proceed to push and PR."
+}
