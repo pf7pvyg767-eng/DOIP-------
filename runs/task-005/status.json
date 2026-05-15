@@ -1,0 +1,103 @@
+﻿{
+  "task": "task-005",
+  "status": "completed",
+  "summary": "Vue 控制台基础页面已通过独立 Test & Status 验证，可进入 push/PR 步骤。",
+  "verified_at": "2026-05-15T17:52:39+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "implementation_tree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\6739ab32\\workdir\\DOIP-------",
+  "commands": [
+    {
+      "command": "openspec validate task-005 --strict",
+      "status": "passed",
+      "summary": "Change 'task-005' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "构建成功，0 errors；存在 2 个非阻塞 NU1900 NuGet 漏洞源访问警告。"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "测试通过：16 passed, 0 failed, 0 skipped。"
+    },
+    {
+      "command": "cd .\\src\\DoipSimulator.WebConsole; npm install; npm run build",
+      "status": "passed",
+      "summary": "npm install 成功；npm run build 在沙箱内因 Windows EPERM spawn 失败，按规则在沙箱外重跑后通过：vue-tsc --noEmit 与 vite build 成功。"
+    },
+    {
+      "command": "npm run dev -- --host 127.0.0.1 --port 5174 + HTTP smoke check",
+      "status": "passed",
+      "summary": "Vite dev server 在沙箱外启动成功，访问 http://127.0.0.1:5174/ 返回 HTTP 200，并包含 Vue app mount point。"
+    }
+  ],
+  "frontend_tests": {
+    "has_test_script": false,
+    "status": "not_applicable",
+    "summary": "src/DoipSimulator.WebConsole/package.json 当前没有 test 脚本；按任务要求记录为现有项目约束，未新增测试框架或扩大 scope。"
+  },
+  "lint_and_format": {
+    "dotnet_format_run": false,
+    "blocking": false,
+    "summary": "dotnet format 不是本 task 的阻塞性核心验收项；本轮未执行。前端无独立 lint 脚本；TypeScript 类型检查由 npm run build 中的 vue-tsc --noEmit 覆盖。"
+  },
+  "acceptance_criteria": [
+    {
+      "criterion": "启动 URL 可看到 Web 控制台。",
+      "status": "passed",
+      "evidence": "App.vue 挂载 DashboardView；Vite dev server smoke check 返回 HTTP 200 且包含 Vue app mount point。"
+    },
+    {
+      "criterion": "服务状态、启动时间、版本展示。",
+      "status": "passed",
+      "evidence": "StatusPanel.vue 展示 Status、Started at、Version，并对缺失值显示 Unavailable。"
+    },
+    {
+      "criterion": "VIN、EID、GID、逻辑地址、DoIP UDP/TCP/TLS 端口展示。",
+      "status": "passed",
+      "evidence": "DashboardView.vue 展示 VIN、EID、GID、Logical address、DoIP UDP port、DoIP TCP port、DoIP TLS port；api.ts 从 SimulatorConfig 投影只读摘要。"
+    },
+    {
+      "criterion": "加载态和错误态存在。",
+      "status": "passed",
+      "evidence": "DashboardView.vue 使用 isLoading 显示 Loading 面板；API 失败时显示 role=alert 的 Backend unavailable 错误面板。"
+    },
+    {
+      "criterion": "刷新会重新请求数据。",
+      "status": "passed",
+      "evidence": "DashboardView.vue 在 onMounted(load) 调用 loadDashboardState；api.ts 每次 loadDashboardState 都并行 fetch /api/health 与 /api/config，页面刷新会重新挂载并重新请求。"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "未实现配置编辑。",
+      "status": "passed",
+      "evidence": "WebConsole src 中未发现 input/textarea/select/save/PUT/PATCH/POST/DELETE；api.ts 仅执行 GET fetch。"
+    },
+    {
+      "item": "未实现日志流。",
+      "status": "passed",
+      "evidence": "WebConsole src 中未发现 EventSource、WebSocket 或日志流视图。"
+    },
+    {
+      "item": "未实现协议报文列表。",
+      "status": "passed",
+      "evidence": "WebConsole src 中未发现协议报文列表视图或相关交互入口。"
+    },
+    {
+      "item": "未新增 DoIP/UDS 运行时行为。",
+      "status": "passed",
+      "evidence": "task-005 改动集中在 WebConsole 只读展示与 OpenSpec；未新增后端 DoIP/UDS 运行时行为或 API 契约。"
+    }
+  ],
+  "non_blocking_notes": [
+    "dotnet build/test 期间出现 NU1900：无法访问 https://api.nuget.org/v3/index.json 获取包漏洞数据；构建和测试均成功。",
+    "Vite/esbuild 在沙箱内启动子进程时出现 EPERM spawn；按权限规则在沙箱外重跑 npm run build 和 dev server smoke check 后均通过。"
+  ],
+  "decision": "task-005 completed; 可进入 push/PR 步骤。"
+}
+
