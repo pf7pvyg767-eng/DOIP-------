@@ -74,10 +74,62 @@ public class RuntimeStartupTests
         }
     }
 
+    [Fact]
+    public async Task HostRunWritesStartupAndStopEventsToRuntimeLog()
+    {
+        var port = GetFreeLoopbackPort();
+        var logPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "runtime-events.log");
+        using var cancellation = new CancellationTokenSource();
+
+        var runTask = CliEntryPoint.RunAsync(
+            ["run", "--listen-address", "127.0.0.1", "--port", port.ToString(), "--event-log", logPath],
+            TextWriter.Null,
+            TextWriter.Null,
+            cancellation.Token);
+
+        try
+        {
+            await WaitForLogContentAsync(logPath, "runtime.started");
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+        }
+
+        var exitCode = await runTask;
+        var content = await File.ReadAllTextAsync(logPath);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("runtime.started", content);
+        Assert.Contains("runtime.stopped", content);
+    }
+
     private static int GetFreeLoopbackPort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
+
+    private static async Task WaitForLogContentAsync(string path, string expected)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        while (!timeout.IsCancellationRequested)
+        {
+            if (File.Exists(path))
+            {
+                var content = await File.ReadAllTextAsync(path, timeout.Token);
+                if (content.Contains(expected, StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+
+            await Task.Delay(50, timeout.Token);
+        }
+
+        throw new TimeoutException($"Timed out waiting for '{expected}' in '{path}'.");
+    }
+
 }

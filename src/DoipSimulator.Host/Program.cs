@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using DoipSimulator.Core.Observability.Logging;
+using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Host;
 using DoipSimulator.WebApi;
 using Microsoft.Extensions.Hosting;
@@ -9,12 +11,19 @@ return await CliEntryPoint.RunAsync(args, Console.Out, Console.Error);
 
 namespace DoipSimulator.Host
 {
-    public sealed record HostRuntimeOptions(string ListenAddress, int Port)
+    public sealed record HostRuntimeOptions(string ListenAddress, int Port, string? EventLogPath = null)
     {
         public const string DefaultListenAddress = "127.0.0.1";
         public const int DefaultPort = 5080;
 
         public static HostRuntimeOptions Default { get; } = new(DefaultListenAddress, DefaultPort);
+
+        public string ResolveEventLogPath()
+        {
+            return string.IsNullOrWhiteSpace(EventLogPath)
+                ? Path.Combine(AppContext.BaseDirectory, "runtime-events.log")
+                : EventLogPath;
+        }
     }
 
     public sealed record ParseResult(HostRuntimeOptions? Options, string? Error)
@@ -89,6 +98,17 @@ namespace DoipSimulator.Host
                     continue;
                 }
 
+                if (option is "--event-log")
+                {
+                    if (!TryReadValue(args, ref index, option, out var eventLogPath, out var error))
+                    {
+                        return new ParseResult(null, error);
+                    }
+
+                    options = options with { EventLogPath = eventLogPath };
+                    continue;
+                }
+
                 return new ParseResult(null, $"Unknown run option: {option}");
             }
 
@@ -128,24 +148,62 @@ namespace DoipSimulator.Host
 
             try
             {
+                var logPath = options.ResolveEventLogPath();
+                await using var eventSink = new FileRuntimeEventSink(logPath);
+                var eventPublisher = new RuntimeEventBus([eventSink]);
+                var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
-                    new WebApiRuntimeOptions(options.ListenAddress, options.Port, DateTimeOffset.UtcNow));
+                    new WebApiRuntimeOptions(options.ListenAddress, options.Port, startedAt),
+                    runtimeEventPublisher: eventPublisher);
 
                 await app.StartAsync(shutdown.Token);
+                await eventPublisher.PublishAsync(
+                    RuntimeEvent.Create(
+                        RuntimeEventLevel.Info,
+                        RuntimeEventCategory.System,
+                        "runtime.started",
+                        "Simulator runtime started.",
+                        data: new Dictionary<string, object?>
+                        {
+                            ["listenAddress"] = options.ListenAddress,
+                            ["port"] = options.Port,
+                            ["startedAt"] = startedAt,
+                        }),
+                    shutdown.Token);
                 output.WriteLine($"Web console/API listening at http://127.0.0.1:{options.Port}");
                 output.WriteLine("Press Ctrl+C to stop.");
                 await app.WaitForShutdownAsync(shutdown.Token);
+                await PublishStoppedAsync(eventPublisher, options);
                 return 0;
             }
             catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
             {
+                await using var stoppedSink = new FileRuntimeEventSink(options.ResolveEventLogPath());
+                await PublishStoppedAsync(new RuntimeEventBus([stoppedSink]), options);
                 return 0;
             }
             finally
             {
                 Console.CancelKeyPress -= cancelHandler;
             }
+        }
+
+        private static async ValueTask PublishStoppedAsync(
+            IRuntimeEventPublisher eventPublisher,
+            HostRuntimeOptions options)
+        {
+            await eventPublisher.PublishAsync(
+                RuntimeEvent.Create(
+                    RuntimeEventLevel.Info,
+                    RuntimeEventCategory.System,
+                    "runtime.stopped",
+                    "Simulator runtime stopped.",
+                    data: new Dictionary<string, object?>
+                    {
+                        ["listenAddress"] = options.ListenAddress,
+                        ["port"] = options.Port,
+                    }));
         }
 
         private static bool TryReadValue(
@@ -186,6 +244,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("Run options:");
             writer.WriteLine("  --listen-address <address>  WebApi listen address. Default: 127.0.0.1");
             writer.WriteLine("  --port <port>               WebApi listen port. Default: 5080");
+            writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine();
             writer.WriteLine("The runtime does not load full ECU configuration or start DoIP, UDS, DID, DTC, Flash, TLS, PCAP, database, or external services.");
         }

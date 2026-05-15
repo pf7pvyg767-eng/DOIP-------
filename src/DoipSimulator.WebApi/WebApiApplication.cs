@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DoipSimulator.Core.Configuration;
+using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.WebApi;
 
@@ -26,13 +27,15 @@ public static class WebApiApplication
         string[] args,
         WebApiRuntimeOptions options,
         ConfigStore? configStore = null,
-        IConfigChangePublisher? configChangePublisher = null)
+        IConfigChangePublisher? configChangePublisher = null,
+        IRuntimeEventPublisher? runtimeEventPublisher = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
 
         var app = builder.Build();
-        var store = configStore ?? new ConfigStore();
+        var eventPublisher = runtimeEventPublisher ?? NullRuntimeEventPublisher.Instance;
+        var store = configStore ?? new ConfigStore(eventPublisher);
         var publisher = configChangePublisher ?? NullConfigChangePublisher.Instance;
         var configPath = ResolveConfigPath(options.ConfigPath);
 
