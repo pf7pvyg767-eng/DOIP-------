@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
+using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.Observability.Logging;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Host;
@@ -284,7 +285,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, and the UDS dispatcher; it does not start UDS business services, TLS, PCAP, database, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, and minimal session services; it does not start SecurityAccess, DID/DTC/Routine, flashing, TLS, PCAP, database, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -319,6 +320,7 @@ namespace DoipSimulator.Host
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
             var sourceAddressWhitelist = TcpDoipServer.ParseSourceAddressWhitelist(config.Network.SourceAddressWhitelist);
+            var ecuRuntimeState = new EcuRuntimeState(entityLogicalAddress);
             var options = new TcpDoipServerOptions(
                 bindAddress,
                 config.Network.DoipTcpPort,
@@ -331,7 +333,12 @@ namespace DoipSimulator.Host
                 new DoipCodec(),
                 new ConnectionRegistry(),
                 eventPublisher,
-                new UdsDispatcher(eventPublisher: eventPublisher));
+                new UdsDispatcher(
+                    [
+                        new DiagnosticSessionControlService(ecuRuntimeState, eventPublisher),
+                        new TesterPresentService(ecuRuntimeState),
+                    ],
+                    eventPublisher));
         }
     }
 

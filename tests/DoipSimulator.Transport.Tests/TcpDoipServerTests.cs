@@ -129,6 +129,65 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task DiagnosticSessionControlAfterRoutingActivationReturnsPositiveResponse()
+    {
+        var events = new CapturingEventSink();
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            new RuntimeEventBus([events]),
+            new HashSet<ushort> { 0x0E80 });
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x10, 0x03]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal(0x0E00, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(0, 2)));
+        Assert.Equal(0x0E80, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(2, 2)));
+        Assert.Equal([0x50, 0x03, 0x00, 0x32, 0x13, 0x88], diagnosticResponse.Payload[4..]);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.session.changed" &&
+                runtimeEvent.Data!["newSession"]?.Equals("extended") == true);
+    }
+
+    [Fact]
+    public async Task TesterPresentAfterRoutingActivationReturnsPositiveResponseAndKeepsConnectionOpen()
+    {
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(registry, NullRuntimeEventPublisher.Instance, new HashSet<ushort> { 0x0E80 });
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x3E, 0x00]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal([0x7E, 0x00], diagnosticResponse.Payload[4..]);
+
+        await stream.WriteAsync(CreateAliveCheckFrame());
+        var aliveCheckResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.AliveCheckResponse, aliveCheckResponse.PayloadType);
+    }
+
+    [Fact]
     public async Task NonWhitelistedSourceAddressReceivesDeniedActivation()
     {
         var registry = new ConnectionRegistry();

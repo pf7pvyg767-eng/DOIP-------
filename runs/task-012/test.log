@@ -1,0 +1,64 @@
+task-012 独立 Test & Status 日志
+
+验证工作区：
+C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\4a25195e\workdir\DOIP-------
+
+说明：
+- 触发评论中的 implementation tree 指向 6739ab32，但该 worktree 当前分支显示为 agent/task-009-udp-vehicle-discovery，且未包含 openspec/changes/task-012 或 0x10/0x3E 实现。
+- 本次改在包含 task-012 OpenSpec 与实现变更的 4a25195e worktree 执行验证。
+
+命令 1：
+openspec validate task-012 --strict
+
+结果：
+passed
+
+关键输出：
+Change 'task-012' is valid
+
+命令 2：
+dotnet build .\DoipSimulator.sln -m:1
+
+结果：
+passed
+
+关键输出：
+已成功生成。
+8 个警告
+0 个错误
+已用时间 00:00:02.25
+
+非阻塞警告：
+NU1900: 获取包漏洞数据时出错: 无法加载源 https://api.nuget.org/v3/index.json 的服务索引。
+
+命令 3：
+dotnet test .\DoipSimulator.sln -m:1
+
+结果：
+passed
+
+测试结果：
+- DoipSimulator.Core.Tests: 28 passed, 0 failed, 0 skipped
+- DoipSimulator.Protocols.Doip.Tests: 14 passed, 0 failed, 0 skipped
+- DoipSimulator.Transport.Tests: 18 passed, 0 failed, 0 skipped
+- DoipSimulator.Protocols.Uds.Tests: 17 passed, 0 failed, 0 skipped
+- 合计：77 passed, 0 failed, 0 skipped
+
+验收核对：
+- 10 01 default session positive response: 通过，响应 50 01 00 32 13 88，包含 P2=50ms / P2*=5000ms。
+- 10 03 extended session positive response: 通过，响应 50 03 00 32 13 88，并更新 session state；TCP 集成测试覆盖 Routing Activation 后请求。
+- 10 02 programming session positive response: 通过，响应 50 02 00 32 13 88，并更新 session state。
+- 3E 00 TesterPresent positive response: 通过，响应 7E 00，并记录 LastTesterPresentAt；TCP 集成测试覆盖 Routing Activation 后请求。
+- 会话切换事件：通过，DiagnosticSessionControlService 发布 RuntimeEventCategory.Uds / uds.session.changed，测试验证 previousSession/newSession 数据。
+
+Scope check：
+- 未实现 TesterPresent timeout fallback。
+- 未实现 SecurityAccess seed/key、等级、失败计数或安全延迟；EcuRuntimeState 仅保留 locked 摘要。
+- 未实现 ResponsePending 0x78、P2/P2* 定时器或 pending queue。
+- 未实现 DID、DTC、Routine、Flash 或其他 UDS 业务服务。
+- 未新增 Web 管理界面、手动 NRC、自定义 UDS 响应或故障注入。
+- 本 task diff 未包含前端文件，未运行 npm。
+- dotnet format 未运行；按补充规则仅作为带超时的非阻塞可选检查。
+
+结论：
+task-012 独立验证通过，状态为 completed，可进入 push / PR 步骤。
