@@ -56,6 +56,7 @@ public static partial class ConfigValidator
         ValidatePort(config.Network?.DoipTlsPort, "network.doipTlsPort", errors);
         ValidatePort(config.Network?.VehicleAnnouncementTargetPort, "network.vehicleAnnouncementTargetPort", errors);
         ValidateVehicleAnnouncementInterval(config.Network?.VehicleAnnouncementIntervalMilliseconds, errors);
+        ValidateTcpConnectionIdleTimeout(config.Network?.TcpConnectionIdleTimeoutMilliseconds, errors);
         ValidateIpAddress(
             config.Network?.VehicleAnnouncementTargetAddress,
             "network.vehicleAnnouncementTargetAddress",
@@ -150,6 +151,18 @@ public static partial class ConfigValidator
             errors.Add(new ConfigValidationError(
                 "network.vehicleAnnouncementIntervalMilliseconds",
                 "Vehicle announcement interval must be at least 100 milliseconds."));
+        }
+    }
+
+    private static void ValidateTcpConnectionIdleTimeout(
+        int? timeoutMilliseconds,
+        List<ConfigValidationError> errors)
+    {
+        if (timeoutMilliseconds is null or < 1000)
+        {
+            errors.Add(new ConfigValidationError(
+                "network.tcpConnectionIdleTimeoutMilliseconds",
+                "TCP connection idle timeout must be at least 1000 milliseconds."));
         }
     }
 

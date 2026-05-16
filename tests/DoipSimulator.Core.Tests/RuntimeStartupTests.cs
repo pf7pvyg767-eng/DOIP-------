@@ -84,6 +84,7 @@ public class RuntimeStartupTests
         var config = SimulatorConfig.CreateDefault();
         config.Network.BindAddress = "127.0.0.1";
         config.Network.DoipUdpPort = GetFreeUdpPort();
+        config.Network.DoipTcpPort = GetFreeLoopbackPort();
         await new ConfigStore().SaveAsync(configPath, config);
         using var cancellation = new CancellationTokenSource();
 

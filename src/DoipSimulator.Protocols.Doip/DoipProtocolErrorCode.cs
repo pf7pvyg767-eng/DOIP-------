@@ -6,5 +6,6 @@ public enum DoipProtocolErrorCode
     UnsupportedProtocolVersion,
     InverseVersionMismatch,
     PayloadLengthMismatch,
+    InvalidPayloadLength,
     InvalidEncodeInput
 }
