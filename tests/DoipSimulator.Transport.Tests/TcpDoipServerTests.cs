@@ -73,6 +73,62 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task DiagnosticMessageAfterRoutingActivationReturnsUnsupportedSidNrc()
+    {
+        var events = new CapturingEventSink();
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            new RuntimeEventBus([events]),
+            new HashSet<ushort> { 0x0E80 });
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x99]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal(0x0E00, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(0, 2)));
+        Assert.Equal(0x0E80, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(2, 2)));
+        Assert.Equal([0x7F, 0x99, 0x11], diagnosticResponse.Payload[4..]);
+        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds && runtimeEvent.Name == "uds.request.received");
+        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds && runtimeEvent.Name == "uds.response.sent");
+    }
+
+    [Fact]
+    public async Task EmptyDiagnosticUdsPayloadReturnsLengthNrcAndKeepsConnectionOpen()
+    {
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(registry, NullRuntimeEventPublisher.Instance, new HashSet<ushort> { 0x0E80 });
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, []));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal([0x7F, 0x00, 0x13], diagnosticResponse.Payload[4..]);
+
+        await stream.WriteAsync(CreateAliveCheckFrame());
+        var aliveCheckResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.AliveCheckResponse, aliveCheckResponse.PayloadType);
+    }
+
+    [Fact]
     public async Task NonWhitelistedSourceAddressReceivesDeniedActivation()
     {
         var registry = new ConnectionRegistry();
@@ -186,6 +242,20 @@ public class TcpDoipServerTests
             DoipCodec.Iso13400ProtocolVersion,
             DoipPayloadType.AliveCheckRequest,
             []));
+        Assert.True(encoded.IsSuccess);
+        return encoded.Value!;
+    }
+
+    private byte[] CreateDiagnosticMessageFrame(ushort sourceAddress, ushort targetAddress, byte[] udsPayload)
+    {
+        var payload = new byte[4 + udsPayload.Length];
+        BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(0, 2), sourceAddress);
+        BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(2, 2), targetAddress);
+        udsPayload.CopyTo(payload.AsSpan(4));
+        var encoded = codec.Encode(DoipFrame.Create(
+            DoipCodec.Iso13400ProtocolVersion,
+            DoipPayloadType.DiagnosticMessage,
+            payload));
         Assert.True(encoded.IsSuccess);
         return encoded.Value!;
     }

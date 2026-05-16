@@ -2,8 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DoipSimulator.Core\DoipSimulator.Core.csproj" />
-    <ProjectReference Include="..\DoipSimulator.Protocols.Doip\DoipSimulator.Protocols.Doip.csproj" />
-    <ProjectReference Include="..\DoipSimulator.Protocols.Uds\DoipSimulator.Protocols.Uds.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
