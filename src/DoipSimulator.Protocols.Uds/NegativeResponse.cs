@@ -5,6 +5,7 @@ public enum NegativeResponseCode : byte
     ServiceNotSupported = 0x11,
     SubFunctionNotSupported = 0x12,
     IncorrectMessageLengthOrInvalidFormat = 0x13,
+    RequestOutOfRange = 0x31,
 }
 
 public sealed record NegativeResponse(byte OriginalServiceId, NegativeResponseCode Code) : UdsResponse

@@ -285,7 +285,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, and minimal session services; it does not start SecurityAccess, DID/DTC/Routine, flashing, TLS, PCAP, database, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, and fixed-byte DID reads; it does not start SecurityAccess, DID writes, DTC/Routine, flashing, TLS, PCAP, database, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -337,6 +337,7 @@ namespace DoipSimulator.Host
                     [
                         new DiagnosticSessionControlService(ecuRuntimeState, eventPublisher),
                         new TesterPresentService(ecuRuntimeState),
+                        new ReadDataByIdentifierService(config.Uds.Dids, eventPublisher),
                     ],
                     eventPublisher));
         }
