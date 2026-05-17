@@ -82,6 +82,7 @@ public static partial class ConfigValidator
 
         ValidateDids(config.Uds?.Dids, errors);
         ValidateDtcs(config.Uds?.Dtcs, errors);
+        ValidateRoutines(config.Uds?.Routines, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -266,6 +267,13 @@ public static partial class ConfigValidator
             && byte.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out status);
     }
 
+    public static bool TryParseRoutineIdentifier(RoutineConfig routine, out ushort identifier)
+    {
+        return TryParseUInt16Hex(ResolveRoutineIdentifier(routine), out identifier);
+    }
+
+    public static string FormatRoutineIdentifier(ushort routineId) => $"0x{routineId:X4}";
+
     private static void ValidateDtcs(List<DtcConfig>? dtcs, List<ConfigValidationError> errors)
     {
         if (dtcs is null)
@@ -302,9 +310,60 @@ public static partial class ConfigValidator
         }
     }
 
+    private static void ValidateRoutines(List<RoutineConfig>? routines, List<ConfigValidationError> errors)
+    {
+        if (routines is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.routines",
+                "Routine configuration list is required."));
+            return;
+        }
+
+        var seenRoutineIds = new HashSet<ushort>();
+        for (var index = 0; index < routines.Count; index++)
+        {
+            var routine = routines[index];
+            if (!TryParseRoutineIdentifier(routine, out var routineId))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.routines[{index}].identifier",
+                    "Routine identifier must be a hexadecimal value from 0x0000 through 0xFFFF."));
+            }
+            else if (!seenRoutineIds.Add(routineId))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.routines[{index}].identifier",
+                    "Routine identifier must be unique."));
+            }
+
+            ValidateRoutineResponse(routine.FixedResponses.Start, $"uds.routines[{index}].fixedResponses.start", errors);
+            ValidateRoutineResponse(routine.FixedResponses.Stop, $"uds.routines[{index}].fixedResponses.stop", errors);
+            ValidateRoutineResponse(routine.FixedResponses.RequestResults, $"uds.routines[{index}].fixedResponses.requestResults", errors);
+        }
+    }
+
     private static string? ResolveDidIdentifier(DidConfig did)
     {
         return string.IsNullOrWhiteSpace(did.Identifier) ? did.Id : did.Identifier;
+    }
+
+    private static string? ResolveRoutineIdentifier(RoutineConfig routine)
+    {
+        return string.IsNullOrWhiteSpace(routine.Identifier) ? routine.RoutineId : routine.Identifier;
+    }
+
+    private static void ValidateRoutineResponse(
+        string? value,
+        string field,
+        List<ConfigValidationError> errors)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && !IsEvenLengthHexBytes(value))
+        {
+            errors.Add(new ConfigValidationError(
+                field,
+                "Routine fixed response payload must be an even-length hexadecimal byte string."));
+        }
     }
 
     private static bool IsEvenLengthHexBytes(string? value)

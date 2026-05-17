@@ -44,7 +44,19 @@
         "active": false
       }
     ],
-    "routines": [],
+    "routines": [
+      {
+        "identifier": "0x0201",
+        "name": "Erase memory preparation",
+        "allowedSessions": [],
+        "requiredSecurityState": null,
+        "fixedResponses": {
+          "start": "0000",
+          "stop": "0000",
+          "requestResults": "0001"
+        }
+      }
+    ],
     "sessions": [],
     "securityAccess": [],
     "flash": null
