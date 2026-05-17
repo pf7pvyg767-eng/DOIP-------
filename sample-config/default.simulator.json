@@ -20,7 +20,14 @@
     ]
   },
   "uds": {
-    "dids": [],
+    "dids": [
+      {
+        "identifier": "0xF190",
+        "name": "VIN",
+        "valueEncoding": "hex",
+        "value": "4C54455354303030303030303030303031"
+      }
+    ],
     "dtcs": [],
     "routines": [],
     "sessions": [],

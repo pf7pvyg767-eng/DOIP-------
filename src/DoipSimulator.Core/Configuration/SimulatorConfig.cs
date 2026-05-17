@@ -36,7 +36,16 @@ public sealed class SimulatorConfig
             },
             Uds = new UdsConfig
             {
-                Dids = [],
+                Dids =
+                [
+                    new DidConfig
+                    {
+                        Identifier = "0xF190",
+                        Name = "VIN",
+                        ValueEncoding = "hex",
+                        Value = "4C54455354303030303030303030303031",
+                    },
+                ],
                 Dtcs = [],
                 Routines = [],
                 Sessions = [],
@@ -106,9 +115,13 @@ public sealed class UdsConfig
 
 public sealed class DidConfig
 {
+    public string? Id { get; set; }
+
     public string Identifier { get; set; } = string.Empty;
 
     public string? Name { get; set; }
+
+    public string ValueEncoding { get; set; } = "hex";
 
     public string? Value { get; set; }
 }

@@ -2,8 +2,11 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
+using DoipSimulator.Core.Configuration;
+using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
+using DoipSimulator.Protocols.Uds;
 using DoipSimulator.Transport.Tcp;
 
 namespace DoipSimulator.Transport.Tests;
@@ -188,6 +191,42 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task ReadDataByIdentifierAfterRoutingActivationReturnsConfiguredDid()
+    {
+        var events = new CapturingEventSink();
+        var eventPublisher = new RuntimeEventBus([events]);
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal(0x0E00, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(0, 2)));
+        Assert.Equal(0x0E80, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(2, 2)));
+        Assert.Equal([0x62, 0xF1, 0x90, 0x4C, 0x54], diagnosticResponse.Payload[4..]);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.did.read" &&
+                runtimeEvent.Data!["did"]?.Equals("0xF190") == true &&
+                runtimeEvent.Data!["responseLength"]?.Equals(4) == true);
+    }
+
+    [Fact]
     public async Task NonWhitelistedSourceAddressReceivesDeniedActivation()
     {
         var registry = new ConnectionRegistry();
@@ -269,7 +308,8 @@ public class TcpDoipServerTests
         ConnectionRegistry registry,
         IRuntimeEventPublisher eventPublisher,
         IReadOnlySet<ushort> whitelist,
-        TimeSpan? idleTimeout = null)
+        TimeSpan? idleTimeout = null,
+        IUdsDispatcher? udsDispatcher = null)
     {
         return new TcpDoipServer(
             new TcpDoipServerOptions(
@@ -280,6 +320,29 @@ public class TcpDoipServerTests
                 idleTimeout),
             codec,
             registry,
+            eventPublisher,
+            udsDispatcher);
+    }
+
+    private static IUdsDispatcher CreateUdsDispatcher(IRuntimeEventPublisher eventPublisher)
+    {
+        var state = new EcuRuntimeState(0x0E00);
+        return new UdsDispatcher(
+            [
+                new DiagnosticSessionControlService(state, eventPublisher),
+                new TesterPresentService(state),
+                new ReadDataByIdentifierService(
+                    [
+                        new DidConfig
+                        {
+                            Identifier = "0xF190",
+                            Name = "VIN",
+                            ValueEncoding = "hex",
+                            Value = "4C54",
+                        },
+                    ],
+                    eventPublisher),
+            ],
             eventPublisher);
     }
 

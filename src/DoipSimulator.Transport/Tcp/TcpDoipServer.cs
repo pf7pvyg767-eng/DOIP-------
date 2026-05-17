@@ -57,6 +57,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
             [
                 new DiagnosticSessionControlService(state, eventPublisher),
                 new TesterPresentService(state),
+                new ReadDataByIdentifierService([], eventPublisher),
             ],
             eventPublisher);
     }

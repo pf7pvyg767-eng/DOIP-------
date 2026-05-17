@@ -76,9 +76,11 @@ public static partial class ConfigValidator
                 ValidateLogicalAddress(
                     whitelist[index],
                     $"network.sourceAddressWhitelist[{index}]",
-                    errors);
+                errors);
             }
         }
+
+        ValidateDids(config.Uds?.Dids, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -177,6 +179,60 @@ public static partial class ConfigValidator
                 field,
                 "IP address must be a valid IPv4 or IPv6 address."));
         }
+    }
+
+    private static void ValidateDids(List<DidConfig>? dids, List<ConfigValidationError> errors)
+    {
+        if (dids is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.dids",
+                "DID configuration list is required."));
+            return;
+        }
+
+        for (var index = 0; index < dids.Count; index++)
+        {
+            var did = dids[index];
+            var identifier = ResolveDidIdentifier(did);
+            if (!TryParseUInt16Hex(identifier, out _))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dids[{index}].identifier",
+                    "DID identifier must be a hexadecimal value from 0x0000 through 0xFFFF."));
+            }
+
+            if (!string.Equals(did.ValueEncoding, "hex", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dids[{index}].valueEncoding",
+                    "DID value encoding must be 'hex'."));
+            }
+
+            if (!IsEvenLengthHexBytes(did.Value))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dids[{index}].value",
+                    "DID fixed value must be an even-length hexadecimal byte string."));
+            }
+        }
+    }
+
+    public static bool TryParseDidIdentifier(DidConfig did, out ushort identifier)
+    {
+        return TryParseUInt16Hex(ResolveDidIdentifier(did), out identifier);
+    }
+
+    private static string? ResolveDidIdentifier(DidConfig did)
+    {
+        return string.IsNullOrWhiteSpace(did.Identifier) ? did.Id : did.Identifier;
+    }
+
+    private static bool IsEvenLengthHexBytes(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && value.Length % 2 == 0
+            && value.All(Uri.IsHexDigit);
     }
 
     private static bool TryParseUInt16Hex(string? value, out ushort parsed)

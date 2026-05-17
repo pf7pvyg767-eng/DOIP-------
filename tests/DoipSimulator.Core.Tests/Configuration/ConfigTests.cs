@@ -16,6 +16,9 @@ public class ConfigTests
         Assert.True(validation.IsValid);
         Assert.Equal("LTEST000000000001", config.Entity.Vin);
         Assert.Equal("0x0E00", config.Entity.LogicalAddress);
+        var did = Assert.Single(config.Uds.Dids);
+        Assert.Equal("0xF190", did.Identifier);
+        Assert.Equal("hex", did.ValueEncoding);
         Assert.False(File.Exists(path));
     }
 
@@ -45,7 +48,8 @@ public class ConfigTests
                   {
                     "identifier": "0xF190",
                     "name": "VIN",
-                    "value": "LTEST000000000002"
+                    "valueEncoding": "hex",
+                    "value": "4C54455354303030303030303030303032"
                   }
                 ],
                 "dtcs": [],
@@ -71,7 +75,9 @@ public class ConfigTests
 
         Assert.Equal("LTEST000000000002", config.Entity.Vin);
         Assert.Equal("127.0.0.1", config.Network.BindAddress);
-        Assert.Single(config.Uds.Dids);
+        var did = Assert.Single(config.Uds.Dids);
+        Assert.Equal("VIN", did.Name);
+        Assert.Equal("hex", did.ValueEncoding);
         Assert.True(config.Uds.Flash!.Enabled);
         Assert.True(config.Tls.Enabled);
         Assert.True(config.Tls.RequireClientCertificate);
@@ -110,6 +116,89 @@ public class ConfigTests
     }
 
     [Fact]
+    public void DidValidationReturnsFieldSpecificErrors()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
+            new DidConfig
+            {
+                Identifier = "0x10000",
+                ValueEncoding = "hex",
+                Value = "00",
+            },
+            new DidConfig
+            {
+                Identifier = "0xF190",
+                ValueEncoding = "hex",
+                Value = "ABC",
+            },
+            new DidConfig
+            {
+                Identifier = "0xF191",
+                ValueEncoding = "expression",
+                Value = "00",
+            },
+        ];
+
+        var validation = ConfigValidator.Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[0].identifier");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[1].value");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[2].valueEncoding");
+    }
+
+    [Fact]
+    public async Task DidConfigSupportsIdAliasWhenLoading()
+    {
+        var path = CreateTempConfigPath();
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "entity": {
+                "vin": "LTEST000000000004",
+                "eid": "001122334457",
+                "gid": "AABBCCDDEEF1",
+                "logicalAddress": "0x0E04"
+              },
+              "network": {
+                "bindAddress": "127.0.0.1",
+                "doipUdpPort": 13401,
+                "doipTcpPort": 13402,
+                "doipTlsPort": 3497,
+                "sourceAddressWhitelist": ["0x0E81"]
+              },
+              "uds": {
+                "dids": [
+                  {
+                    "id": "0xF191",
+                    "name": "Compatibility DID",
+                    "valueEncoding": "hex",
+                    "value": "0102"
+                  }
+                ],
+                "dtcs": [],
+                "routines": [],
+                "sessions": [],
+                "securityAccess": [],
+                "flash": null
+              },
+              "tls": {
+                "enabled": false
+              }
+            }
+            """);
+
+        var config = await new ConfigStore().LoadAsync(path);
+
+        var did = Assert.Single(config.Uds.Dids);
+        Assert.Equal("0xF191", did.Id);
+        Assert.Equal("Compatibility DID", did.Name);
+    }
+
+    [Fact]
     public async Task SaveAndReloadPreservesConfigurationData()
     {
         var path = CreateTempConfigPath();
@@ -124,11 +213,13 @@ public class ConfigTests
         config.Network.DoipTcpPort = 13411;
         config.Network.DoipTlsPort = 3500;
         config.Network.SourceAddressWhitelist = ["0x0E82", "0x0E83"];
+        config.Uds.Dids.Clear();
         config.Uds.Dids.Add(new DidConfig
         {
             Identifier = "0xF190",
             Name = "VIN",
-            Value = "LTEST000000000003",
+            ValueEncoding = "hex",
+            Value = "4C54455354303030303030303030303033",
         });
         config.Uds.Flash = new FlashConfig
         {
@@ -150,6 +241,7 @@ public class ConfigTests
         Assert.Equal(config.Network.SourceAddressWhitelist, reloaded.Network.SourceAddressWhitelist);
         Assert.Single(reloaded.Uds.Dids);
         Assert.Equal("VIN", reloaded.Uds.Dids[0].Name);
+        Assert.Equal("hex", reloaded.Uds.Dids[0].ValueEncoding);
         Assert.True(reloaded.Uds.Flash!.Enabled);
         Assert.Equal("cert.pem", reloaded.Tls.ServerCertificatePath);
         Assert.True(reloaded.Tls.RequireClientCertificate);
