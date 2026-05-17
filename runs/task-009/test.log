@@ -1,0 +1,59 @@
+task-009 独立 Test & Status 验证日志
+时间: 2026-05-15T19:31:28.5275482+08:00
+实现目录: C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+
+1. 变更范围检查
+命令: git diff --name-only HEAD
+结果: 通过
+摘要:
+- 后端/config/OpenSpec/test 文件有变更。
+- 未发现 task-009 的前端文件变更。
+- 因此前端 npm build 不需要运行。
+
+2. OpenSpec 严格校验
+命令: openspec validate task-009 --strict
+结果: 通过
+关键输出:
+Change 'task-009' is valid
+
+3. .NET build
+命令: dotnet build .\DoipSimulator.sln -m:1
+结果: 通过
+关键输出:
+- 已成功生成。
+- 6 个警告。
+- 0 个错误。
+- 警告均为 NU1900：NuGet vulnerability feed 访问失败或 SSL 连接失败，不是编译错误。
+
+4. .NET test
+命令: dotnet test .\DoipSimulator.sln -m:1
+结果: 通过
+关键输出:
+- DoipSimulator.Core.Tests: 28 passed, 0 failed, 0 skipped
+- DoipSimulator.Protocols.Doip.Tests: 10 passed, 0 failed, 0 skipped
+- DoipSimulator.Transport.Tests: 7 passed, 0 failed, 0 skipped
+- 总计: 45 passed, 0 failed, 0 skipped
+- 同样存在非阻塞 NU1900 NuGet vulnerability feed 访问警告。
+
+5. Acceptance criteria 核对
+结果: 通过
+- UDP 服务随 Host 启动并随 Host 停止释放端口：Host 通过配置创建并启动 UdpDoipServer；UdpDoipServerTests.StopReleasesUdpPort 验证停止后端口可重新绑定。
+- 本地 UDP client 发送 Vehicle Identification Request 后可收到 response：UdpDoipServerTests.LocalUdpClientReceivesVehicleIdentificationResponse 覆盖。
+- 支持 Vehicle Identification Request with EID / with VIN；不匹配时不响应：VehicleIdentificationUdpHandlerTests.DirectedEidAndVinRequestsOnlyRespondWhenTheyMatch 覆盖。
+- Vehicle Announcement 可按配置发送，内容来自 SimulatorConfig.entity：UdpDoipServerTests.AnnouncementCanBeSentToConfiguredTargetAndLogged 和 VehicleIdentificationPayloadTests 覆盖。
+- UDP request / response / announcement / protocol error 事件进入现有 runtime event pipeline，category 为 doip：VehicleIdentificationUdpHandler 使用 RuntimeEventCategory.Doip 发布 request、response、announcement、protocol_error；现有 WebApi recent/log stream 读取 RuntimeEventHub。
+
+6. Scope check
+结果: 通过
+- 未实现 TCP。
+- 未实现 routing activation。
+- 未实现 TLS。
+- 未实现 UDS 诊断转发。
+- 未实现 PCAP。
+- 未新增 Web UI 页面或复杂图表。
+
+7. Lint / formatter
+结果: 未运行
+说明: dotnet format 是带超时的非阻塞可选检查，不属于 task-009 必跑验证；本轮未运行。
+
+最终结论: task-009 completed，可进入 push/PR。

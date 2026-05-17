@@ -1,0 +1,76 @@
+{
+  "task": "task-009",
+  "status": "completed",
+  "verified_at": "2026-05-15T19:31:28.5275482+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "implementation_tree": "C:/Users/hello/multica_workspaces_desktop-api.multica.ai/82820572-6c1f-4353-b094-74ba05c9ec12/6739ab32/workdir/DOIP-------",
+  "commands": [
+    {
+      "command": "openspec validate task-009 --strict",
+      "status": "passed",
+      "summary": "Change 'task-009' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "构建通过，0 errors；存在 6 个 NU1900 NuGet vulnerability feed 访问警告。"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "45 passed, 0 failed, 0 skipped。"
+    }
+  ],
+  "lint": {
+    "required": false,
+    "status": "not_run",
+    "summary": "dotnet format 是非阻塞可选检查，本轮未运行。"
+  },
+  "frontend": {
+    "changed": false,
+    "npm_required": false,
+    "summary": "git diff --name-only HEAD 未显示 task-009 前端文件变更，因此不需要 npm build。"
+  },
+  "acceptance": [
+    {
+      "criterion": "UDP 服务随 Host 启动并随 Host 停止释放端口。",
+      "status": "passed",
+      "evidence": "Host 使用 SimulatorConfig 创建 UdpDoipServer 并随 runtime 启停；UdpDoipServerTests.StopReleasesUdpPort 验证端口释放。"
+    },
+    {
+      "criterion": "本地 UDP client 发送 Vehicle Identification Request 后可收到 response。",
+      "status": "passed",
+      "evidence": "UdpDoipServerTests.LocalUdpClientReceivesVehicleIdentificationResponse 覆盖本地 UDP 请求和响应解码。"
+    },
+    {
+      "criterion": "支持 Vehicle Identification Request with EID / with VIN；不匹配时不响应。",
+      "status": "passed",
+      "evidence": "VehicleIdentificationUdpHandlerTests.DirectedEidAndVinRequestsOnlyRespondWhenTheyMatch 覆盖 EID/VIN 匹配和 EID 不匹配无响应。"
+    },
+    {
+      "criterion": "Vehicle Announcement 可按配置发送，内容来自 SimulatorConfig.entity。",
+      "status": "passed",
+      "evidence": "UdpDoipServerTests.AnnouncementCanBeSentToConfiguredTargetAndLogged 验证配置目标、发送事件和实体 payload。"
+    },
+    {
+      "criterion": "UDP request / response / announcement / protocol error 事件均进入现有 runtime event pipeline，category 为 doip，可被 Web recent/log stream 消费。",
+      "status": "passed",
+      "evidence": "VehicleIdentificationUdpHandler 对 request、response、announcement、protocol_error 发布 RuntimeEventCategory.Doip；现有 WebApi recent/stream 端点消费 RuntimeEventHub。"
+    }
+  ],
+  "scope_check": [
+    { "item": "不实现 TCP", "status": "passed" },
+    { "item": "不实现 routing activation", "status": "passed" },
+    { "item": "不实现 TLS", "status": "passed" },
+    { "item": "不实现 UDS 诊断转发", "status": "passed" },
+    { "item": "不实现 PCAP", "status": "passed" },
+    { "item": "不新增 Web UI 页面或复杂图表", "status": "passed" }
+  ],
+  "warnings": [
+    "dotnet build/test 出现 NU1900 警告，原因是 NuGet vulnerability feed 无法获取；不影响构建或测试通过结论。"
+  ],
+  "decision": "task-009 可进入 push/PR"
+}

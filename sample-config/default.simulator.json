@@ -10,6 +10,10 @@
     "doipUdpPort": 13400,
     "doipTcpPort": 13400,
     "doipTlsPort": 3496,
+    "vehicleAnnouncementEnabled": false,
+    "vehicleAnnouncementIntervalMilliseconds": 1000,
+    "vehicleAnnouncementTargetAddress": "255.255.255.255",
+    "vehicleAnnouncementTargetPort": 13400,
     "sourceAddressWhitelist": [
       "0x0E80"
     ]
