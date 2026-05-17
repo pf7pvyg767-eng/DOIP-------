@@ -63,7 +63,7 @@ public sealed class RoutineControlService : IUdsService
             return await RejectAsync(context, request.OriginalServiceId, routineId, controlType, NegativeResponseCode.ConditionsNotCorrect, "session not allowed", cancellationToken);
         }
 
-        if (!IsSecurityAllowed(routine, ecuState.SecurityStateSummary))
+        if (!IsSecurityAllowed(routine, ecuState))
         {
             return await RejectAsync(context, request.OriginalServiceId, routineId, controlType, NegativeResponseCode.SecurityAccessDenied, "security state not allowed", cancellationToken);
         }
@@ -141,10 +141,17 @@ public sealed class RoutineControlService : IUdsService
         return routine.AllowedSessions.Any(item => string.Equals(item, current, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsSecurityAllowed(RoutineConfig routine, string securityState)
+    private static bool IsSecurityAllowed(RoutineConfig routine, EcuRuntimeState ecuState)
     {
+        if (routine.RequiredSecurityLevel is not null)
+        {
+            return ecuState.IsSecurityLevelUnlocked(routine.RequiredSecurityLevel.Value);
+        }
+
         return string.IsNullOrWhiteSpace(routine.RequiredSecurityState)
-            || string.Equals(routine.RequiredSecurityState, securityState, StringComparison.OrdinalIgnoreCase);
+            || (string.Equals(routine.RequiredSecurityState, "unlocked", StringComparison.OrdinalIgnoreCase)
+                ? ecuState.IsAnySecurityLevelUnlocked()
+                : string.Equals(routine.RequiredSecurityState, ecuState.SecurityStateSummary, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FormatControlType(byte controlType)

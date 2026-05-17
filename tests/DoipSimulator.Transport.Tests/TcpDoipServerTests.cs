@@ -240,7 +240,77 @@ public class TcpDoipServerTests
             runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
                 runtimeEvent.Name == "uds.did.read" &&
                 runtimeEvent.Data!["did"]?.Equals("0xF190") == true &&
-                runtimeEvent.Data!["responseLength"]?.Equals(4) == true);
+            runtimeEvent.Data!["responseLength"]?.Equals(4) == true);
+    }
+
+    [Fact]
+    public async Task SecurityAccessAfterRoutingActivationReturnsSeedResponse()
+    {
+        var events = new CapturingEventSink();
+        var eventPublisher = new RuntimeEventBus([events]);
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x27, 0x01]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal(0x0E00, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(0, 2)));
+        Assert.Equal(0x0E80, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(2, 2)));
+        Assert.Equal(0x67, diagnosticResponse.Payload[4]);
+        Assert.Equal(0x01, diagnosticResponse.Payload[5]);
+        Assert.NotEmpty(diagnosticResponse.Payload[6..]);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.securityAccess.processed" &&
+                runtimeEvent.Data!["outcome"]?.Equals("seed-issued") == true);
+    }
+
+    [Fact]
+    public async Task SecurityAccessKeyAfterRoutingActivationUnlocksLevel()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x27, 0x01]));
+        var seedResponse = await ReadFrameAsync(stream);
+        var key = SecurityAccessService.ComputeExpectedKey(
+            SimulatorConfig.CreateDefault().Uds.SecurityAccess[0],
+            seedResponse.Payload[6..]);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x27, 0x02, .. key]));
+        var keyResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, keyResponse.PayloadType);
+        Assert.Equal([0x67, 0x02], keyResponse.Payload[4..]);
     }
 
     [Fact]
@@ -432,7 +502,8 @@ public class TcpDoipServerTests
             [
                 new DiagnosticSessionControlService(state, eventPublisher),
                 new TesterPresentService(state),
-                new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
+                new SecurityAccessService(config, state, eventPublisher),
+                new ReadDataByIdentifierService(didRuntimeStore, state, eventPublisher),
                 new ReadDtcInformationService(dtcStore),
                 new ClearDiagnosticInformationService(dtcStore),
             ],

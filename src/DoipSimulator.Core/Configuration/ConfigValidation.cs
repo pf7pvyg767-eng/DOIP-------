@@ -83,6 +83,7 @@ public static partial class ConfigValidator
         ValidateDids(config.Uds?.Dids, errors);
         ValidateDtcs(config.Uds?.Dtcs, errors);
         ValidateRoutines(config.Uds?.Routines, errors);
+        ValidateSecurityAccess(config.Uds?.SecurityAccess, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -224,6 +225,11 @@ public static partial class ConfigValidator
                     $"uds.dids[{index}].writeLength",
                     "DID write length must be a positive byte count when configured."));
             }
+
+            ValidateRequiredSecurityLevel(
+                did.RequiredSecurityLevel,
+                $"uds.dids[{index}].requiredSecurityLevel",
+                errors);
         }
     }
 
@@ -273,6 +279,21 @@ public static partial class ConfigValidator
     }
 
     public static string FormatRoutineIdentifier(ushort routineId) => $"0x{routineId:X4}";
+
+    public static bool TryParseByteHex(string? value, out byte parsed)
+    {
+        parsed = 0;
+        if (string.IsNullOrWhiteSpace(value)
+            || !value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var hex = value[2..];
+        return hex is { Length: > 0 and <= 2 }
+            && hex.All(Uri.IsHexDigit)
+            && byte.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out parsed);
+    }
 
     private static void ValidateDtcs(List<DtcConfig>? dtcs, List<ConfigValidationError> errors)
     {
@@ -340,6 +361,107 @@ public static partial class ConfigValidator
             ValidateRoutineResponse(routine.FixedResponses.Start, $"uds.routines[{index}].fixedResponses.start", errors);
             ValidateRoutineResponse(routine.FixedResponses.Stop, $"uds.routines[{index}].fixedResponses.stop", errors);
             ValidateRoutineResponse(routine.FixedResponses.RequestResults, $"uds.routines[{index}].fixedResponses.requestResults", errors);
+            ValidateRequiredSecurityLevel(
+                routine.RequiredSecurityLevel,
+                $"uds.routines[{index}].requiredSecurityLevel",
+                errors);
+        }
+    }
+
+    private static void ValidateSecurityAccess(
+        List<SecurityAccessConfig>? securityAccess,
+        List<ConfigValidationError> errors)
+    {
+        if (securityAccess is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.securityAccess",
+                "SecurityAccess configuration list is required."));
+            return;
+        }
+
+        var seenLevels = new HashSet<int>();
+        var seenSeedSubFunctions = new HashSet<byte>();
+        var seenKeySubFunctions = new HashSet<byte>();
+        for (var index = 0; index < securityAccess.Count; index++)
+        {
+            var level = securityAccess[index];
+            if (level.Level is < 1 or > 255)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].level",
+                    "SecurityAccess level must be between 1 and 255."));
+            }
+            else if (!seenLevels.Add(level.Level))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].level",
+                    "SecurityAccess level must be unique."));
+            }
+
+            var seedIsValid = TryParseByteHex(level.SeedSubFunction, out var seedSubFunction);
+            var keyIsValid = TryParseByteHex(level.KeySubFunction, out var keySubFunction);
+
+            if (!seedIsValid)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].seedSubFunction",
+                    "Seed request sub-function must be a hexadecimal byte such as 0x01."));
+            }
+            else if (!seenSeedSubFunctions.Add(seedSubFunction))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].seedSubFunction",
+                    "Seed request sub-function must be unique."));
+            }
+
+            if (!keyIsValid)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].keySubFunction",
+                    "Key send sub-function must be a hexadecimal byte such as 0x02."));
+            }
+            else if (!seenKeySubFunctions.Add(keySubFunction))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].keySubFunction",
+                    "Key send sub-function must be unique."));
+            }
+
+            if (seedIsValid && keyIsValid && seedSubFunction == keySubFunction)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].keySubFunction",
+                    "Seed and key sub-functions must differ."));
+            }
+
+            if (!IsSupportedSecurityAlgorithm(level.Algorithm))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].algorithm",
+                    "SecurityAccess algorithm must be 'builtin-xor' or 'builtin-add'."));
+            }
+
+            if (!IsEvenLengthHexBytes(level.AlgorithmParameter))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].algorithmParameter",
+                    "SecurityAccess algorithm parameter must be an even-length hexadecimal byte string."));
+            }
+
+            if (level.MaxFailedAttempts < 1)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].maxFailedAttempts",
+                    "SecurityAccess max failed attempts must be at least 1."));
+            }
+
+            if (level.LockoutMs < 0)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.securityAccess[{index}].lockoutMs",
+                    "SecurityAccess lockout time must be zero or greater."));
+            }
         }
     }
 
@@ -364,6 +486,25 @@ public static partial class ConfigValidator
                 field,
                 "Routine fixed response payload must be an even-length hexadecimal byte string."));
         }
+    }
+
+    private static void ValidateRequiredSecurityLevel(
+        int? value,
+        string field,
+        List<ConfigValidationError> errors)
+    {
+        if (value is < 1 or > 255)
+        {
+            errors.Add(new ConfigValidationError(
+                field,
+                "Required SecurityAccess level must be between 1 and 255 when configured."));
+        }
+    }
+
+    private static bool IsSupportedSecurityAlgorithm(string? algorithm)
+    {
+        return string.Equals(algorithm, "builtin-xor", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(algorithm, "builtin-add", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsEvenLengthHexBytes(string? value)

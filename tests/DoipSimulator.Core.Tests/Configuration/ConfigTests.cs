@@ -150,6 +150,46 @@ public class ConfigTests
     }
 
     [Fact]
+    public void SecurityAccessValidationReturnsFieldSpecificErrors()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.SecurityAccess =
+        [
+            new SecurityAccessConfig
+            {
+                Level = 1,
+                SeedSubFunction = "0x01",
+                KeySubFunction = "0x02",
+                Algorithm = "builtin-xor",
+                AlgorithmParameter = "A5",
+                MaxFailedAttempts = 3,
+                LockoutMs = 1000,
+            },
+            new SecurityAccessConfig
+            {
+                Level = 1,
+                SeedSubFunction = "0x01",
+                KeySubFunction = "0x01",
+                Algorithm = "external-dll",
+                AlgorithmParameter = "not-hex",
+                MaxFailedAttempts = 0,
+                LockoutMs = -1,
+            },
+        ];
+
+        var validation = ConfigValidator.Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].level");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].seedSubFunction");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].keySubFunction");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].algorithm");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].algorithmParameter");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].maxFailedAttempts");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.securityAccess[1].lockoutMs");
+    }
+
+    [Fact]
     public void DtcValidationReturnsFieldSpecificErrors()
     {
         var config = SimulatorConfig.CreateDefault();

@@ -69,9 +69,29 @@ public class RoutineControlServiceTests
             item.Data!["outcome"]?.Equals("accepted") == true);
     }
 
+    [Fact]
+    public async Task ProtectedRoutineRequiresMatchingUnlockedSecurityLevel()
+    {
+        var state = new EcuRuntimeState(0x0E00);
+        var service = CreateService(ecuState: state, requiredSecurityLevel: 1);
+
+        var lockedResponses = await service.HandleAsync(
+            new UdsRequest(0x31, [0x01, 0x02, 0x01]),
+            new UdsContext());
+        state.MarkSecurityLevelUnlocked(1);
+        var unlockedResponses = await service.HandleAsync(
+            new UdsRequest(0x31, [0x01, 0x02, 0x01]),
+            new UdsContext());
+
+        Assert.Equal([0x7F, 0x31, 0x33], Assert.Single(lockedResponses).ToBytes());
+        Assert.Equal([0x71, 0x01, 0x02, 0x01, 0x00, 0x00], Assert.Single(unlockedResponses).ToBytes());
+    }
+
     private static RoutineControlService CreateService(
         RoutineFixedResponses? fixedResponses = null,
-        IRuntimeEventPublisher? eventPublisher = null)
+        IRuntimeEventPublisher? eventPublisher = null,
+        EcuRuntimeState? ecuState = null,
+        int? requiredSecurityLevel = null)
     {
         var config = SimulatorConfig.CreateDefault();
         config.Uds.Routines =
@@ -80,6 +100,7 @@ public class RoutineControlServiceTests
             {
                 Identifier = "0x0201",
                 Name = "Configured routine",
+                RequiredSecurityLevel = requiredSecurityLevel,
                 FixedResponses = fixedResponses ?? new RoutineFixedResponses
                 {
                     Start = "0000",
@@ -89,6 +110,6 @@ public class RoutineControlServiceTests
             },
         ];
 
-        return new RoutineControlService(config, new EcuRuntimeState(0x0E00), eventPublisher);
+        return new RoutineControlService(config, ecuState ?? new EcuRuntimeState(0x0E00), eventPublisher);
     }
 }

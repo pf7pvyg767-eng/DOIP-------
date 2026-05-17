@@ -65,7 +65,20 @@ public sealed class SimulatorConfig
                     },
                 ],
                 Sessions = [],
-                SecurityAccess = [],
+                SecurityAccess =
+                [
+                    new SecurityAccessConfig
+                    {
+                        Level = 1,
+                        Name = "Default built-in level",
+                        SeedSubFunction = "0x01",
+                        KeySubFunction = "0x02",
+                        Algorithm = "builtin-xor",
+                        AlgorithmParameter = "A5",
+                        MaxFailedAttempts = 3,
+                        LockoutMs = 1000,
+                    },
+                ],
                 Flash = null,
             },
             Tls = new TlsConfig
@@ -148,6 +161,8 @@ public sealed class DidConfig
     public List<string> AllowedWriteSessions { get; set; } = [];
 
     public string? RequiredSecurityState { get; set; }
+
+    public int? RequiredSecurityLevel { get; set; }
 }
 
 public sealed class DtcConfig
@@ -175,6 +190,8 @@ public sealed class RoutineConfig
 
     public string? RequiredSecurityState { get; set; }
 
+    public int? RequiredSecurityLevel { get; set; }
+
     public RoutineFixedResponses FixedResponses { get; set; } = new();
 }
 
@@ -196,9 +213,21 @@ public sealed class SessionConfig
 
 public sealed class SecurityAccessConfig
 {
-    public string Level { get; set; } = string.Empty;
+    public int Level { get; set; }
 
     public string? Name { get; set; }
+
+    public string SeedSubFunction { get; set; } = string.Empty;
+
+    public string KeySubFunction { get; set; } = string.Empty;
+
+    public string Algorithm { get; set; } = string.Empty;
+
+    public string AlgorithmParameter { get; set; } = string.Empty;
+
+    public int MaxFailedAttempts { get; set; }
+
+    public int LockoutMs { get; set; }
 }
 
 public sealed class FlashConfig

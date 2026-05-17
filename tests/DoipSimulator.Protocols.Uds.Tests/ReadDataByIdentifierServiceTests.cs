@@ -117,7 +117,28 @@ public class ReadDataByIdentifierServiceTests
         Assert.DoesNotContain(sink.Events, item => item.Name == "uds.did.read");
     }
 
-    private static ReadDataByIdentifierService CreateService(IRuntimeEventPublisher? eventPublisher = null)
+    [Fact]
+    public async Task ProtectedDidRequiresMatchingUnlockedSecurityLevel()
+    {
+        var state = new EcuRuntimeState(0x0E00);
+        var service = CreateService(ecuState: state, protectedDid: true);
+
+        var lockedResponses = await service.HandleAsync(
+            new UdsRequest(0x22, [0xF1, 0x90]),
+            new UdsContext());
+        state.MarkSecurityLevelUnlocked(1);
+        var unlockedResponses = await service.HandleAsync(
+            new UdsRequest(0x22, [0xF1, 0x90]),
+            new UdsContext());
+
+        Assert.Equal([0x7F, 0x22, 0x33], Assert.Single(lockedResponses).ToBytes());
+        Assert.Equal([0x62, 0xF1, 0x90, 0x01, 0x02, 0x03], Assert.Single(unlockedResponses).ToBytes());
+    }
+
+    private static ReadDataByIdentifierService CreateService(
+        IRuntimeEventPublisher? eventPublisher = null,
+        EcuRuntimeState? ecuState = null,
+        bool protectedDid = false)
     {
         var config = SimulatorConfig.CreateDefault();
         config.Uds.Dids =
@@ -128,6 +149,7 @@ public class ReadDataByIdentifierServiceTests
                     Name = "VIN",
                     ValueEncoding = "hex",
                     Value = "010203",
+                    RequiredSecurityLevel = protectedDid ? 1 : null,
                 },
                 new DidConfig
                 {
@@ -138,6 +160,6 @@ public class ReadDataByIdentifierServiceTests
                 },
         ];
         var store = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
-        return new ReadDataByIdentifierService(store, eventPublisher);
+        return new ReadDataByIdentifierService(store, ecuState, eventPublisher);
     }
 }

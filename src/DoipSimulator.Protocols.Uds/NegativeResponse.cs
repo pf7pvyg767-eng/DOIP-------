@@ -8,6 +8,9 @@ public enum NegativeResponseCode : byte
     ConditionsNotCorrect = 0x22,
     RequestOutOfRange = 0x31,
     SecurityAccessDenied = 0x33,
+    InvalidKey = 0x35,
+    ExceedNumberOfAttempts = 0x36,
+    RequiredTimeDelayNotExpired = 0x37,
 }
 
 public sealed record NegativeResponse(byte OriginalServiceId, NegativeResponseCode Code) : UdsResponse

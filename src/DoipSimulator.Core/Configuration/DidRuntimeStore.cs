@@ -93,6 +93,23 @@ public sealed class DidRuntimeStore
         }
     }
 
+    public bool TryGetReadSecurityRequirement(ushort did, out int? requiredSecurityLevel, out string? requiredSecurityState)
+    {
+        lock (gate)
+        {
+            if (!entries.TryGetValue(did, out var entry))
+            {
+                requiredSecurityLevel = null;
+                requiredSecurityState = null;
+                return false;
+            }
+
+            requiredSecurityLevel = entry.Config.RequiredSecurityLevel;
+            requiredSecurityState = entry.Config.RequiredSecurityState;
+            return true;
+        }
+    }
+
     public async ValueTask<DidWriteResult> WriteHexAsync(
         ushort did,
         string valueEncoding,
@@ -146,7 +163,7 @@ public sealed class DidRuntimeStore
                 return new DidWriteResult(DidWriteFailure.ConditionsNotCorrect, "Current diagnostic session does not allow DID writes.");
             }
 
-            if (!IsSecurityStateAllowed(entry.Config, ecuState.SecurityStateSummary))
+            if (!IsSecurityStateAllowed(entry.Config, ecuState))
             {
                 return new DidWriteResult(DidWriteFailure.SecurityAccessDenied, "Current security state does not allow DID writes.");
             }
@@ -192,10 +209,17 @@ public sealed class DidRuntimeStore
         return config.AllowedWriteSessions.Any(item => string.Equals(item, current, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsSecurityStateAllowed(DidConfig config, string currentSecurityState)
+    private static bool IsSecurityStateAllowed(DidConfig config, EcuRuntimeState ecuState)
     {
+        if (config.RequiredSecurityLevel is not null)
+        {
+            return ecuState.IsSecurityLevelUnlocked(config.RequiredSecurityLevel.Value);
+        }
+
         return string.IsNullOrWhiteSpace(config.RequiredSecurityState)
-            || string.Equals(config.RequiredSecurityState, currentSecurityState, StringComparison.OrdinalIgnoreCase);
+            || (string.Equals(config.RequiredSecurityState, "unlocked", StringComparison.OrdinalIgnoreCase)
+                ? ecuState.IsAnySecurityLevelUnlocked()
+                : string.Equals(config.RequiredSecurityState, ecuState.SecurityStateSummary, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string BuildPermissionSummary(DidConfig config)
