@@ -11,6 +11,7 @@ public enum NegativeResponseCode : byte
     InvalidKey = 0x35,
     ExceedNumberOfAttempts = 0x36,
     RequiredTimeDelayNotExpired = 0x37,
+    ResponsePending = 0x78,
 }
 
 public sealed record NegativeResponse(byte OriginalServiceId, NegativeResponseCode Code) : UdsResponse

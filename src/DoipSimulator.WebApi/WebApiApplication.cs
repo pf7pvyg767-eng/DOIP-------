@@ -26,7 +26,8 @@ public sealed record EcuStateSnapshot(
     string LogicalAddress,
     string CurrentSession,
     string SecurityStateSummary,
-    DateTimeOffset? LastTesterPresentAt);
+    DateTimeOffset? LastTesterPresentAt,
+    TesterPresentTimingSnapshot Timing);
 
 public sealed record DidValueUpdateRequest(string? ValueEncoding, string? Value, bool Persist = false);
 
@@ -94,7 +95,7 @@ public static class WebApiApplication
 
         app.MapGet("/api/connections", () => Results.Ok(connections.GetActiveSnapshots()));
 
-        app.MapGet("/api/ecu/state", () => Results.Ok(ToEcuStateSnapshot(ecuState)));
+        app.MapGet("/api/ecu/state", () => Results.Ok(ToEcuStateSnapshot(ecuState, store.LoadAsync(configPath).GetAwaiter().GetResult())));
 
         app.MapGet("/api/dids", () => Results.Ok(didStore.List()));
 
@@ -406,13 +407,15 @@ public static class WebApiApplication
         };
     }
 
-    private static EcuStateSnapshot ToEcuStateSnapshot(EcuRuntimeState state)
+    private static EcuStateSnapshot ToEcuStateSnapshot(EcuRuntimeState state, SimulatorConfig config)
     {
+        var timeout = config.Uds.TesterPresentTimeout;
         return new EcuStateSnapshot(
             $"0x{state.LogicalAddress:X4}",
             FormatSession(state.CurrentSession),
             state.SecurityStateSummary,
-            state.LastTesterPresentAt);
+            state.LastTesterPresentAt,
+            state.GetTesterPresentTimingSnapshot(timeout.Enabled, timeout.TimeoutMs));
     }
 
     private static string FormatSession(DiagnosticSession session)

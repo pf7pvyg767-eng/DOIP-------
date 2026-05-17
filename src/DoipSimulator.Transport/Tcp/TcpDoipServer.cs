@@ -60,13 +60,17 @@ public sealed class TcpDoipServer : IAsyncDisposable
         var dtcRuntimeStore = new DtcRuntimeStore(config, eventPublisher);
         return new UdsDispatcher(
             [
-                new DiagnosticSessionControlService(state, eventPublisher),
-                new TesterPresentService(state),
+                new DiagnosticSessionControlService(state, config, eventPublisher),
+                new TesterPresentService(
+                    state,
+                    timeout: TimeSpan.FromMilliseconds(config.Uds.TesterPresentTimeout.TimeoutMs)),
                 new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
                 new ReadDtcInformationService(dtcRuntimeStore),
                 new ClearDiagnosticInformationService(dtcRuntimeStore),
             ],
-            eventPublisher);
+            eventPublisher,
+            config,
+            state);
     }
 
     public int BoundPort
@@ -133,6 +137,9 @@ public sealed class TcpDoipServer : IAsyncDisposable
         {
         }
         catch (SocketException)
+        {
+        }
+        catch (IOException)
         {
         }
 
@@ -271,6 +278,14 @@ public sealed class TcpDoipServer : IAsyncDisposable
                 connection,
                 CancellationToken.None);
         }
+        catch (IOException)
+        {
+            await PublishConnectionEventAsync(
+                "doip.tcp.connection.disconnected",
+                "DoIP TCP connection disconnected.",
+                connection,
+                CancellationToken.None);
+        }
         finally
         {
             connectionRegistry.Remove(connection.ConnectionId);
@@ -368,6 +383,11 @@ public sealed class TcpDoipServer : IAsyncDisposable
         var responses = await udsDispatcher.DispatchAsync(udsPayload, context, cancellationToken);
         foreach (var response in responses)
         {
+            if (response.DelayBeforeSend > TimeSpan.Zero)
+            {
+                await Task.Delay(response.DelayBeforeSend, cancellationToken);
+            }
+
             var encoded = codec.Encode(DoipFrame.Create(
                 DoipCodec.Iso13400ProtocolVersion,
                 DoipPayloadType.DiagnosticMessage,

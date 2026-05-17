@@ -244,6 +244,92 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task ResponsePendingConfiguredServiceSendsPendingThenFinalDiagnosticResponse()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.ResponseDelays =
+        [
+            new ServiceResponseDelayConfig
+            {
+                ServiceId = "0x22",
+                ResponsePending = new ResponsePendingConfig { Enabled = true },
+                InitialDelayMs = 0,
+                FinalDelayMs = 0,
+            },
+        ];
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, config: config));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+        var pendingResponse = await ReadFrameAsync(stream);
+        var finalResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal([0x7F, 0x22, 0x78], pendingResponse.Payload[4..]);
+        Assert.Equal([0x62, 0xF1, 0x90, 0x4C, 0x54], finalResponse.Payload[4..]);
+    }
+
+    [Fact]
+    public async Task DelayedDiagnosticResponseDoesNotBlockOtherConnectionAliveCheck()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.ResponseDelays =
+        [
+            new ServiceResponseDelayConfig
+            {
+                ServiceId = "0x22",
+                ResponsePending = new ResponsePendingConfig { Enabled = true },
+                InitialDelayMs = 0,
+                FinalDelayMs = 250,
+            },
+        ];
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80, 0x0E81 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, config: config));
+        await server.StartAsync();
+
+        using var delayedClient = new TcpClient();
+        await delayedClient.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var delayedStream = delayedClient.GetStream();
+        await delayedStream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        await ReadFrameAsync(delayedStream);
+
+        using var otherClient = new TcpClient();
+        await otherClient.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var otherStream = otherClient.GetStream();
+
+        var delayedRequest = Task.Run(async () =>
+        {
+            await delayedStream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+            return await ReadFrameAsync(delayedStream);
+        });
+
+        await otherStream.WriteAsync(CreateAliveCheckFrame());
+        var aliveCheckResponse = await ReadFrameAsync(otherStream);
+        var pendingResponse = await delayedRequest;
+
+        Assert.Equal(DoipPayloadType.AliveCheckResponse, aliveCheckResponse.PayloadType);
+        Assert.Equal([0x7F, 0x22, 0x78], pendingResponse.Payload[4..]);
+    }
+
+    [Fact]
     public async Task SecurityAccessAfterRoutingActivationReturnsSeedResponse()
     {
         var events = new CapturingEventSink();
@@ -482,10 +568,11 @@ public class TcpDoipServerTests
     private static IUdsDispatcher CreateUdsDispatcher(
         IRuntimeEventPublisher eventPublisher,
         bool dtcActive = false,
-        DtcRuntimeStore? dtcRuntimeStore = null)
+        DtcRuntimeStore? dtcRuntimeStore = null,
+        SimulatorConfig? config = null)
     {
         var state = new EcuRuntimeState(0x0E00);
-        var config = SimulatorConfig.CreateDefault();
+        config ??= SimulatorConfig.CreateDefault();
         config.Uds.Dids =
         [
             new DidConfig
@@ -500,14 +587,16 @@ public class TcpDoipServerTests
         var dtcStore = dtcRuntimeStore ?? CreateDtcRuntimeStore(eventPublisher, dtcActive);
         return new UdsDispatcher(
             [
-                new DiagnosticSessionControlService(state, eventPublisher),
+                new DiagnosticSessionControlService(state, config, eventPublisher),
                 new TesterPresentService(state),
                 new SecurityAccessService(config, state, eventPublisher),
                 new ReadDataByIdentifierService(didRuntimeStore, state, eventPublisher),
                 new ReadDtcInformationService(dtcStore),
                 new ClearDiagnosticInformationService(dtcStore),
             ],
-            eventPublisher);
+            eventPublisher,
+            config,
+            state);
     }
 
     private static DtcRuntimeStore CreateDtcRuntimeStore(IRuntimeEventPublisher eventPublisher, bool active)

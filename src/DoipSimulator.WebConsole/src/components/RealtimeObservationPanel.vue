@@ -150,6 +150,7 @@ function applyRuntimeEvent(event: RuntimeEvent): void {
       currentSession: readString(event.data, "newSession", readString(event.data, "currentSession", "Unavailable")),
       securityStateSummary: ecuState.value?.securityStateSummary ?? "locked",
       lastTesterPresentAt: ecuState.value?.lastTesterPresentAt ?? null,
+      timing: ecuState.value?.timing,
     };
   }
 }
@@ -264,6 +265,26 @@ function formatTimestamp(value: string | null | undefined): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString();
 }
+
+function formatTimingStatus(state: EcuStateSnapshot | null): string {
+  if (!state?.timing) {
+    return "Unavailable";
+  }
+
+  return state.timing.timeoutEnabled
+    ? `${state.timing.timeoutMs} ms`
+    : "disabled";
+}
+
+function formatFallbackStatus(state: EcuStateSnapshot | null): string {
+  if (!state?.timing?.lastFallbackAt) {
+    return "None";
+  }
+
+  const reason = state.timing.lastFallbackReason ?? "timeout";
+  const previous = state.timing.lastFallbackPreviousSession ?? "unknown";
+  return `${formatTimestamp(state.timing.lastFallbackAt)} ${previous} -> default (${reason})`;
+}
 </script>
 
 <template>
@@ -294,6 +315,14 @@ function formatTimestamp(value: string | null | undefined): string {
       <div class="fact">
         <dt>TesterPresent</dt>
         <dd>{{ formatTimestamp(ecuState?.lastTesterPresentAt) }}</dd>
+      </div>
+      <div class="fact">
+        <dt>TP timeout</dt>
+        <dd>{{ formatTimingStatus(ecuState) }}</dd>
+      </div>
+      <div class="fact">
+        <dt>Last fallback</dt>
+        <dd>{{ formatFallbackStatus(ecuState) }}</dd>
       </div>
     </div>
 

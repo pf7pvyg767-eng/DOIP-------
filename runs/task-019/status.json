@@ -1,0 +1,75 @@
+﻿{
+    "task":  "task-019",
+    "status":  "completed",
+    "completed_at":  "2026-05-17T16:07:10.3161398Z",
+    "summary":  "独立 Test \u0026 Status 通过；核心验证、acceptance check、scope check 均通过。",
+    "commands":  [
+                     {
+                         "command":  "openspec validate task-019 --strict",
+                         "working_directory":  "repository root",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "notes":  "Change \u0027task-019\u0027 is valid"
+                     },
+                     {
+                         "command":  "dotnet build .\\DoipSimulator.sln -m:1",
+                         "working_directory":  "repository root",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "notes":  "0 errors；仅有非阻塞 NU1900 NuGet vulnerability feed 访问警告。"
+                     },
+                     {
+                         "command":  "dotnet test .\\DoipSimulator.sln -m:1",
+                         "working_directory":  "repository root",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "notes":  "172 passed, 0 failed, 0 skipped；仅有非阻塞 NU1900 warning。"
+                     },
+                     {
+                         "command":  "npm run build",
+                         "working_directory":  "repository root",
+                         "status":  "not_applicable_at_root",
+                         "exit_code":  1,
+                         "notes":  "仓库根目录无 package.json；随后在 src\\DoipSimulator.WebConsole 执行同一 build 脚本。"
+                     },
+                     {
+                         "command":  "npm run build",
+                         "working_directory":  "src\\DoipSimulator.WebConsole",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "notes":  "沙箱内首次因 esbuild spawn EPERM 失败；按规则批准后在沙箱外重跑通过。"
+                     },
+                     {
+                         "command":  "git diff --check",
+                         "working_directory":  "repository root",
+                         "status":  "passed",
+                         "exit_code":  0,
+                         "notes":  "仅有 Windows LF/CRLF normalization warnings。"
+                     }
+                 ],
+    "acceptance":  {
+                       "status":  "passed",
+                       "checks":  [
+                                      "TesterPresent 超时后回退默认会话，并有 uds.tester_present.timeout / state.session.changed 事件证据。",
+                                      "0x10 DiagnosticSessionControl 正响应包含配置的 P2/P2*。",
+                                      "服务级固定响应延迟配置生效，字段级验证覆盖无效 serviceId、负延迟、无效 P2/P2* 和无效 TesterPresent timeout。",
+                                      "ResponsePending 场景按序返回 7F SID 78，随后返回最终响应。",
+                                      "定时行为不阻塞其他连接的基础处理。",
+                                      "Web/API 只读展示 timing 状态。"
+                                  ]
+                   },
+    "scope":  {
+                  "status":  "passed",
+                  "checks":  [
+                                 "未实现复杂调度器。",
+                                 "未实现概率型延迟或 jitter。",
+                                 "未实现完整 OEM 时序策略。",
+                                 "未扩大到 Flash、ODX/PDX、PCAP/TLS、SecurityAccess DLL 插件或其他诊断流程。",
+                                 "未增加 Web timing 编辑能力。"
+                             ]
+              },
+    "artifacts":  [
+                      "runs/task-019/status.json",
+                      "runs/task-019/test.log"
+                  ]
+}

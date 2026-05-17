@@ -83,6 +83,7 @@ public static partial class ConfigValidator
         ValidateDids(config.Uds?.Dids, errors);
         ValidateDtcs(config.Uds?.Dtcs, errors);
         ValidateRoutines(config.Uds?.Routines, errors);
+        ValidateTiming(config.Uds, errors);
         ValidateSecurityAccess(config.Uds?.SecurityAccess, errors);
 
         return new ConfigValidationResult(errors);
@@ -462,6 +463,115 @@ public static partial class ConfigValidator
                     $"uds.securityAccess[{index}].lockoutMs",
                     "SecurityAccess lockout time must be zero or greater."));
             }
+        }
+    }
+
+    private static void ValidateTiming(UdsConfig? uds, List<ConfigValidationError> errors)
+    {
+        if (uds is null)
+        {
+            errors.Add(new ConfigValidationError("uds", "UDS configuration is required."));
+            return;
+        }
+
+        if (uds.Sessions is null)
+        {
+            errors.Add(new ConfigValidationError("uds.sessions", "Session configuration list is required."));
+        }
+        else
+        {
+            for (var index = 0; index < uds.Sessions.Count; index++)
+            {
+                ValidateSessionTiming(uds.Sessions[index], index, errors);
+            }
+        }
+
+        if (uds.TesterPresentTimeout is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.testerPresentTimeout",
+                "TesterPresent timeout configuration is required."));
+        }
+        else if (uds.TesterPresentTimeout.TimeoutMs < 1)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.testerPresentTimeout.timeoutMs",
+                "TesterPresent timeout must be at least 1 millisecond."));
+        }
+
+        if (uds.ResponseDelays is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.responseDelays",
+                "Response delay configuration list is required."));
+            return;
+        }
+
+        var seenServices = new HashSet<byte>();
+        for (var index = 0; index < uds.ResponseDelays.Count; index++)
+        {
+            var delay = uds.ResponseDelays[index];
+            if (!TryParseByteHex(delay.ServiceId, out var serviceId))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.responseDelays[{index}].serviceId",
+                    "Response delay serviceId must be a hexadecimal byte such as 0x31."));
+            }
+            else if (!seenServices.Add(serviceId))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.responseDelays[{index}].serviceId",
+                    "Response delay serviceId must be unique."));
+            }
+
+            if (delay.ResponsePending is null)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.responseDelays[{index}].responsePending",
+                    "ResponsePending configuration is required."));
+            }
+
+            if (delay.InitialDelayMs < 0)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.responseDelays[{index}].initialDelayMs",
+                    "Initial response delay must be zero or greater."));
+            }
+
+            if (delay.FinalDelayMs < 0)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.responseDelays[{index}].finalDelayMs",
+                    "Final response delay must be zero or greater."));
+            }
+        }
+    }
+
+    private static void ValidateSessionTiming(
+        SessionConfig session,
+        int index,
+        List<ConfigValidationError> errors)
+    {
+        if (!TryParseByteHex(session.Identifier, out var subFunction)
+            || subFunction is not (0x01 or 0x02 or 0x03))
+        {
+            errors.Add(new ConfigValidationError(
+                $"uds.sessions[{index}].identifier",
+                "Session identifier must be 0x01, 0x02, or 0x03."));
+        }
+
+        if (session.P2Ms is < 1 or > ushort.MaxValue)
+        {
+            errors.Add(new ConfigValidationError(
+                $"uds.sessions[{index}].p2Ms",
+                "Session P2 must be between 1 and 65535 milliseconds when configured."));
+        }
+
+        if (session.P2StarMs is < 1 or > ushort.MaxValue)
+        {
+            errors.Add(new ConfigValidationError(
+                $"uds.sessions[{index}].p2StarMs",
+                "Session P2* must be between 1 and 65535 milliseconds when configured."));
         }
     }
 

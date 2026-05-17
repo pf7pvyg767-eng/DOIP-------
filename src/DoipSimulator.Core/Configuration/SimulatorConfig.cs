@@ -65,6 +65,12 @@ public sealed class SimulatorConfig
                     },
                 ],
                 Sessions = [],
+                TesterPresentTimeout = new TesterPresentTimeoutConfig
+                {
+                    Enabled = true,
+                    TimeoutMs = 5000,
+                },
+                ResponseDelays = [],
                 SecurityAccess =
                 [
                     new SecurityAccessConfig
@@ -136,6 +142,10 @@ public sealed class UdsConfig
     public List<RoutineConfig> Routines { get; set; } = [];
 
     public List<SessionConfig> Sessions { get; set; } = [];
+
+    public TesterPresentTimeoutConfig TesterPresentTimeout { get; set; } = new();
+
+    public List<ServiceResponseDelayConfig> ResponseDelays { get; set; } = [];
 
     public List<SecurityAccessConfig> SecurityAccess { get; set; } = [];
 
@@ -209,6 +219,33 @@ public sealed class SessionConfig
     public string Identifier { get; set; } = string.Empty;
 
     public string? Name { get; set; }
+
+    public int? P2Ms { get; set; }
+
+    public int? P2StarMs { get; set; }
+}
+
+public sealed class TesterPresentTimeoutConfig
+{
+    public bool Enabled { get; set; } = true;
+
+    public int TimeoutMs { get; set; } = 5000;
+}
+
+public sealed class ServiceResponseDelayConfig
+{
+    public string ServiceId { get; set; } = string.Empty;
+
+    public ResponsePendingConfig ResponsePending { get; set; } = new();
+
+    public int InitialDelayMs { get; set; }
+
+    public int FinalDelayMs { get; set; }
+}
+
+public sealed class ResponsePendingConfig
+{
+    public bool Enabled { get; set; }
 }
 
 public sealed class SecurityAccessConfig

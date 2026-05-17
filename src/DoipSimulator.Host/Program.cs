@@ -352,8 +352,10 @@ namespace DoipSimulator.Host
                 eventPublisher,
                 new UdsDispatcher(
                     [
-                        new DiagnosticSessionControlService(ecuRuntimeState, eventPublisher),
-                        new TesterPresentService(ecuRuntimeState),
+                        new DiagnosticSessionControlService(ecuRuntimeState, config, eventPublisher),
+                        new TesterPresentService(
+                            ecuRuntimeState,
+                            timeout: TimeSpan.FromMilliseconds(config.Uds.TesterPresentTimeout.TimeoutMs)),
                         new SecurityAccessService(config, ecuRuntimeState, eventPublisher),
                         new ReadDataByIdentifierService(didRuntimeStore, ecuRuntimeState, eventPublisher),
                         new WriteDataByIdentifierService(didRuntimeStore, ecuRuntimeState),
@@ -363,7 +365,9 @@ namespace DoipSimulator.Host
                         new CommunicationControlService(controlServiceStateStore),
                         new ControlDtcSettingService(controlServiceStateStore),
                     ],
-                    eventPublisher));
+                    eventPublisher,
+                    config,
+                    ecuRuntimeState));
         }
     }
 
