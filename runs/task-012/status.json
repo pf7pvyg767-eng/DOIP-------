@@ -1,0 +1,86 @@
+{
+  "task": "task-012",
+  "status": "completed",
+  "conclusion": "独立 Test & Status 验证通过，task-012 可进入 push / PR 步骤。",
+  "verified_at": "2026-05-17T00:25:18+08:00",
+  "worktree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\4a25195e\\workdir\\DOIP-------",
+  "base_branch": "agent/task-011-uds-dispatcher-nrc",
+  "commands": [
+    {
+      "command": "openspec validate task-012 --strict",
+      "result": "passed",
+      "summary": "Change 'task-012' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "result": "passed",
+      "summary": "构建成功，0 errors；存在非阻塞 NU1900 NuGet vulnerability feed 访问警告。"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "result": "passed",
+      "summary": "77 passed, 0 failed, 0 skipped；存在非阻塞 NU1900 NuGet vulnerability feed 访问警告。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "item": "10 01 返回 default session positive response，并包含基础 P2/P2* 参数。",
+      "result": "passed",
+      "evidence": "DiagnosticSessionControlServiceTests.SupportedSubFunctionsChangeSessionAndReturnP2Parameters 覆盖 0x01，响应为 50 01 00 32 13 88。"
+    },
+    {
+      "item": "10 03 返回 extended session positive response，并更新 session state。",
+      "result": "passed",
+      "evidence": "单元测试覆盖 0x03 session 更新；TCP 集成测试覆盖 Routing Activation 后 10 03 返回 50 03 00 32 13 88。"
+    },
+    {
+      "item": "10 02 返回 programming session positive response，并更新 session state。",
+      "result": "passed",
+      "evidence": "DiagnosticSessionControlServiceTests.SupportedSubFunctionsChangeSessionAndReturnP2Parameters 覆盖 0x02，响应为 50 02 00 32 13 88。"
+    },
+    {
+      "item": "3E 00 返回 TesterPresent positive response。",
+      "result": "passed",
+      "evidence": "TesterPresentServiceTests 覆盖 3E 00 返回 7E 00；TCP 集成测试覆盖 Routing Activation 后 3E 00。"
+    },
+    {
+      "item": "会话切换进入结构化 runtime event pipeline。",
+      "result": "passed",
+      "evidence": "DiagnosticSessionControlService 发布 uds.session.changed；单元测试和 TCP 集成测试验证 RuntimeEventCategory.Uds 事件。"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "未实现 TesterPresent timeout fallback。",
+      "result": "passed"
+    },
+    {
+      "item": "未实现 SecurityAccess。",
+      "result": "passed",
+      "note": "EcuRuntimeState 仅暴露 locked 摘要，未实现 seed/key、等级、失败计数或安全延迟。"
+    },
+    {
+      "item": "未实现 ResponsePending 0x78。",
+      "result": "passed"
+    },
+    {
+      "item": "未实现 DID/DTC/Routine/Flash 或 Web 管理界面。",
+      "result": "passed",
+      "note": "相关命中仅来自历史配置数据模型、OpenSpec 文档或 Host 描述；本 task diff 未新增这些业务服务或前端文件。"
+    },
+    {
+      "item": "前端未变更，不运行 npm。",
+      "result": "passed"
+    }
+  ],
+  "non_blocking_warnings": [
+    "dotnet build / test 输出 NU1900：无法访问 https://api.nuget.org/v3/index.json 获取包漏洞数据；不影响构建和测试结论。",
+    "触发评论给出的 implementation tree 为 6739ab32，但该目录停在 task-009 且不包含 task-012；实际 task-012 实现与 OpenSpec 位于 4a25195e worktree，本次在该 worktree 完成验证。",
+    "dotnet format 未运行；按本 task 补充规则，该项仅为带超时的非阻塞可选检查，不阻塞流水线。"
+  ],
+  "artifacts": [
+    "runs/task-012/status.json",
+    "runs/task-012/test.log"
+  ],
+  "next_step": "建议进入 push / PR 步骤。"
+}

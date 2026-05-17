@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
+using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
 using DoipSimulator.Protocols.Uds;
@@ -42,9 +43,22 @@ public sealed class TcpDoipServer : IAsyncDisposable
         this.codec = codec;
         this.connectionRegistry = connectionRegistry;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
-        this.udsDispatcher = udsDispatcher ?? new UdsDispatcher(eventPublisher: this.eventPublisher);
+        this.udsDispatcher = udsDispatcher ?? CreateDefaultUdsDispatcher(options.EntityLogicalAddress, this.eventPublisher);
         routingActivationHandler = new RoutingActivationHandler(codec);
         aliveCheckHandler = new AliveCheckHandler(codec);
+    }
+
+    private static UdsDispatcher CreateDefaultUdsDispatcher(
+        ushort entityLogicalAddress,
+        IRuntimeEventPublisher eventPublisher)
+    {
+        var state = new EcuRuntimeState(entityLogicalAddress);
+        return new UdsDispatcher(
+            [
+                new DiagnosticSessionControlService(state, eventPublisher),
+                new TesterPresentService(state),
+            ],
+            eventPublisher);
     }
 
     public int BoundPort
