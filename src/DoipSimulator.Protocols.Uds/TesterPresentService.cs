@@ -8,11 +8,16 @@ public sealed class TesterPresentService : IUdsService
 
     private readonly EcuRuntimeState state;
     private readonly TimeProvider timeProvider;
+    private readonly TimeSpan? timeout;
 
-    public TesterPresentService(EcuRuntimeState state, TimeProvider? timeProvider = null)
+    public TesterPresentService(
+        EcuRuntimeState state,
+        TimeProvider? timeProvider = null,
+        TimeSpan? timeout = null)
     {
         this.state = state;
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.timeout = timeout;
     }
 
     public byte ServiceId => Sid;
@@ -34,7 +39,16 @@ public sealed class TesterPresentService : IUdsService
                 [new NegativeResponse(request.OriginalServiceId, NegativeResponseCode.SubFunctionNotSupported)]);
         }
 
-        state.RecordTesterPresent(timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        if (timeout is null)
+        {
+            state.RecordTesterPresent(now);
+        }
+        else
+        {
+            state.RecordTesterPresent(now, timeout.Value);
+        }
+
         return ValueTask.FromResult<IReadOnlyList<UdsResponse>>([new RawUdsResponse([0x7E, 0x00])]);
     }
 }

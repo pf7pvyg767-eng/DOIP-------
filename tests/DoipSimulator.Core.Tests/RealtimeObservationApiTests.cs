@@ -84,6 +84,9 @@ public class RealtimeObservationApiTests
             Assert.Equal("extended", snapshot.CurrentSession);
             Assert.Equal("locked", snapshot.SecurityStateSummary);
             Assert.Equal(DateTimeOffset.Parse("2026-05-17T00:01:00Z"), snapshot.LastTesterPresentAt);
+            Assert.True(snapshot.Timing.TimeoutEnabled);
+            Assert.Equal(5000, snapshot.Timing.TimeoutMs);
+            Assert.Equal("extended", snapshot.Timing.CurrentSession);
         }
         finally
         {

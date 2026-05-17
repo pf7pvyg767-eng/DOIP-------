@@ -57,7 +57,31 @@
         }
       }
     ],
-    "sessions": [],
+    "sessions": [
+      {
+        "identifier": "0x01",
+        "name": "default",
+        "p2Ms": 50,
+        "p2StarMs": 5000
+      },
+      {
+        "identifier": "0x02",
+        "name": "programming",
+        "p2Ms": 75,
+        "p2StarMs": 5000
+      },
+      {
+        "identifier": "0x03",
+        "name": "extended",
+        "p2Ms": 100,
+        "p2StarMs": 5000
+      }
+    ],
+    "testerPresentTimeout": {
+      "enabled": true,
+      "timeoutMs": 5000
+    },
+    "responseDelays": [],
     "securityAccess": [
       {
         "level": 1,

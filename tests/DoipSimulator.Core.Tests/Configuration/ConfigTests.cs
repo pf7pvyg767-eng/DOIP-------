@@ -190,6 +190,42 @@ public class ConfigTests
     }
 
     [Fact]
+    public void TimingValidationReturnsFieldSpecificErrors()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Sessions =
+        [
+            new SessionConfig
+            {
+                Identifier = "0x10",
+                P2Ms = 0,
+                P2StarMs = -1,
+            },
+        ];
+        config.Uds.TesterPresentTimeout.TimeoutMs = 0;
+        config.Uds.ResponseDelays =
+        [
+            new ServiceResponseDelayConfig
+            {
+                ServiceId = "0x100",
+                InitialDelayMs = -1,
+                FinalDelayMs = -2,
+            },
+        ];
+
+        var validation = ConfigValidator.Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Field == "uds.sessions[0].identifier");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.sessions[0].p2Ms");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.sessions[0].p2StarMs");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.testerPresentTimeout.timeoutMs");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.responseDelays[0].serviceId");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.responseDelays[0].initialDelayMs");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.responseDelays[0].finalDelayMs");
+    }
+
+    [Fact]
     public void DtcValidationReturnsFieldSpecificErrors()
     {
         var config = SimulatorConfig.CreateDefault();

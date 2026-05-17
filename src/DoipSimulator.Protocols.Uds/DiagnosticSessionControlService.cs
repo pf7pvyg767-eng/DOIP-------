@@ -1,4 +1,5 @@
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.Protocols.Uds;
@@ -10,13 +11,16 @@ public sealed class DiagnosticSessionControlService : IUdsService
     public const ushort BaselineP2StarMilliseconds = 5000;
 
     private readonly EcuRuntimeState state;
+    private readonly IReadOnlyDictionary<byte, SessionTiming> sessionTimings;
     private readonly IRuntimeEventPublisher eventPublisher;
 
     public DiagnosticSessionControlService(
         EcuRuntimeState state,
+        SimulatorConfig? config = null,
         IRuntimeEventPublisher? eventPublisher = null)
     {
         this.state = state;
+        sessionTimings = BuildSessionTimings(config);
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
     }
 
@@ -40,13 +44,39 @@ public sealed class DiagnosticSessionControlService : IUdsService
 
         var previous = state.SetSession(session);
         await PublishSessionChangedAsync(context, previous, session, subFunction, cancellationToken);
+        var timing = ResolveTiming(subFunction);
         return [new RawUdsResponse([
             0x50,
             subFunction,
-            (byte)(BaselineP2Milliseconds >> 8),
-            (byte)(BaselineP2Milliseconds & 0xFF),
-            (byte)(BaselineP2StarMilliseconds >> 8),
-            (byte)(BaselineP2StarMilliseconds & 0xFF)])];
+            (byte)(timing.P2Milliseconds >> 8),
+            (byte)(timing.P2Milliseconds & 0xFF),
+            (byte)(timing.P2StarMilliseconds >> 8),
+            (byte)(timing.P2StarMilliseconds & 0xFF)])];
+    }
+
+    private SessionTiming ResolveTiming(byte subFunction)
+    {
+        return sessionTimings.TryGetValue(subFunction, out var timing)
+            ? timing
+            : new SessionTiming(BaselineP2Milliseconds, BaselineP2StarMilliseconds);
+    }
+
+    private static IReadOnlyDictionary<byte, SessionTiming> BuildSessionTimings(SimulatorConfig? config)
+    {
+        var timings = new Dictionary<byte, SessionTiming>();
+        foreach (var session in config?.Uds?.Sessions ?? [])
+        {
+            if (!ConfigValidator.TryParseByteHex(session.Identifier, out var subFunction))
+            {
+                continue;
+            }
+
+            timings[subFunction] = new SessionTiming(
+                (ushort)(session.P2Ms ?? BaselineP2Milliseconds),
+                (ushort)(session.P2StarMs ?? BaselineP2StarMilliseconds));
+        }
+
+        return timings;
     }
 
     private static bool TryMapSession(byte subFunction, out DiagnosticSession session)
@@ -122,4 +152,6 @@ public sealed class DiagnosticSessionControlService : IUdsService
     }
 
     private static string FormatLogicalAddress(ushort logicalAddress) => $"0x{logicalAddress:X4}";
+
+    private sealed record SessionTiming(ushort P2Milliseconds, ushort P2StarMilliseconds);
 }

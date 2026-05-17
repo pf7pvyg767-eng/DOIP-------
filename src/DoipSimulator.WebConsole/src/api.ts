@@ -76,6 +76,16 @@ export interface EcuStateSnapshot {
   currentSession: string;
   securityStateSummary: string;
   lastTesterPresentAt?: string | null;
+  timing?: {
+    timeoutEnabled: boolean;
+    timeoutMs: number;
+    lastAcceptedAt?: string | null;
+    timeoutDeadline?: string | null;
+    lastFallbackAt?: string | null;
+    lastFallbackReason?: string | null;
+    lastFallbackPreviousSession?: string | null;
+    currentSession: string;
+  };
 }
 
 export interface DidSummary {

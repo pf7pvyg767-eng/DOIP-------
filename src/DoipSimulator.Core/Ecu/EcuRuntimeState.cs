@@ -7,6 +7,25 @@ public sealed record SecurityAccessLevelSnapshot(
     DateTimeOffset? LockedUntil,
     bool HasSeed);
 
+public sealed record TesterPresentTimingSnapshot(
+    bool TimeoutEnabled,
+    int TimeoutMs,
+    DateTimeOffset? LastAcceptedAt,
+    DateTimeOffset? TimeoutDeadline,
+    DateTimeOffset? LastFallbackAt,
+    string? LastFallbackReason,
+    string? LastFallbackPreviousSession,
+    string CurrentSession);
+
+public sealed record TesterPresentTimeoutResult(
+    bool FellBack,
+    DiagnosticSession PreviousSession,
+    DiagnosticSession CurrentSession,
+    DateTimeOffset EvaluatedAt,
+    DateTimeOffset? LastAcceptedAt,
+    DateTimeOffset? TimeoutDeadline,
+    string Reason);
+
 public enum DiagnosticSession
 {
     Default = 0x01,
@@ -68,6 +87,10 @@ public sealed class EcuRuntimeState
 
     private DiagnosticSession currentSession = DiagnosticSession.Default;
     private DateTimeOffset? lastTesterPresentAt;
+    private DateTimeOffset? testerPresentTimeoutDeadline;
+    private DateTimeOffset? lastTesterPresentFallbackAt;
+    private string? lastTesterPresentFallbackReason;
+    private DiagnosticSession? lastTesterPresentFallbackPreviousSession;
     private readonly Dictionary<int, SecurityAccessLevelState> securityLevels = [];
 
     public DiagnosticSession SetSession(DiagnosticSession session)
@@ -85,6 +108,69 @@ public sealed class EcuRuntimeState
         lock (gate)
         {
             lastTesterPresentAt = acceptedAt;
+        }
+    }
+
+    public void RecordTesterPresent(DateTimeOffset acceptedAt, TimeSpan timeout)
+    {
+        lock (gate)
+        {
+            lastTesterPresentAt = acceptedAt;
+            testerPresentTimeoutDeadline = acceptedAt.Add(timeout);
+        }
+    }
+
+    public TesterPresentTimeoutResult EvaluateTesterPresentTimeout(
+        bool enabled,
+        TimeSpan timeout,
+        DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            if (!enabled || currentSession == DiagnosticSession.Default)
+            {
+                return NoTesterPresentFallback(now, "not-applicable");
+            }
+
+            var deadline = testerPresentTimeoutDeadline
+                ?? (lastTesterPresentAt?.Add(timeout) ?? now.Add(-timeout));
+            if (deadline > now)
+            {
+                return NoTesterPresentFallback(now, "within-timeout");
+            }
+
+            var previous = currentSession;
+            currentSession = DiagnosticSession.Default;
+            lastTesterPresentFallbackAt = now;
+            lastTesterPresentFallbackReason = "tester-present-timeout";
+            lastTesterPresentFallbackPreviousSession = previous;
+
+            return new TesterPresentTimeoutResult(
+                true,
+                previous,
+                currentSession,
+                now,
+                lastTesterPresentAt,
+                deadline,
+                "tester-present-timeout");
+        }
+    }
+
+    public TesterPresentTimingSnapshot GetTesterPresentTimingSnapshot(bool enabled, int timeoutMs)
+    {
+        lock (gate)
+        {
+            return new TesterPresentTimingSnapshot(
+                enabled,
+                timeoutMs,
+                lastTesterPresentAt,
+                testerPresentTimeoutDeadline,
+                lastTesterPresentFallbackAt,
+                lastTesterPresentFallbackReason,
+                lastTesterPresentFallbackPreviousSession is null
+                    ? null
+                    : FormatSession(lastTesterPresentFallbackPreviousSession.Value),
+                FormatSession(currentSession));
         }
     }
 
@@ -234,6 +320,29 @@ public sealed class EcuRuntimeState
     private static bool IsLockedOut(SecurityAccessLevelState state, DateTimeOffset now)
     {
         return state.LockedUntil is not null && state.LockedUntil > now;
+    }
+
+    private TesterPresentTimeoutResult NoTesterPresentFallback(DateTimeOffset now, string reason)
+    {
+        return new TesterPresentTimeoutResult(
+            false,
+            currentSession,
+            currentSession,
+            now,
+            lastTesterPresentAt,
+            testerPresentTimeoutDeadline,
+            reason);
+    }
+
+    private static string FormatSession(DiagnosticSession session)
+    {
+        return session switch
+        {
+            DiagnosticSession.Default => "default",
+            DiagnosticSession.Programming => "programming",
+            DiagnosticSession.Extended => "extended",
+            _ => session.ToString().ToLowerInvariant(),
+        };
     }
 
     private sealed class SecurityAccessLevelState

@@ -1,4 +1,5 @@
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.Protocols.Uds.Tests;
@@ -63,7 +64,7 @@ public class DiagnosticSessionControlServiceTests
     {
         var sink = new CapturingEventSink();
         var state = new EcuRuntimeState(0x0E00);
-        var service = new DiagnosticSessionControlService(state, new RuntimeEventBus([sink]));
+        var service = new DiagnosticSessionControlService(state, eventPublisher: new RuntimeEventBus([sink]));
 
         await service.HandleAsync(
             new UdsRequest(0x10, [0x03]),
@@ -74,5 +75,30 @@ public class DiagnosticSessionControlServiceTests
         Assert.Equal("default", runtimeEvent.Data!["previousSession"]);
         Assert.Equal("extended", runtimeEvent.Data!["newSession"]);
         Assert.Equal("0x0E00", runtimeEvent.Data!["ecuLogicalAddress"]);
+    }
+
+    [Fact]
+    public async Task SupportedSubFunctionUsesConfiguredP2Parameters()
+    {
+        var state = new EcuRuntimeState(0x0E00);
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Sessions =
+        [
+            new SessionConfig
+            {
+                Identifier = "0x03",
+                Name = "extended",
+                P2Ms = 100,
+                P2StarMs = 2000,
+            },
+        ];
+        var service = new DiagnosticSessionControlService(state, config);
+
+        var responses = await service.HandleAsync(
+            new UdsRequest(0x10, [0x03]),
+            new UdsContext(ConnectionId: "conn_000001"));
+
+        var response = Assert.Single(responses);
+        Assert.Equal([0x50, 0x03, 0x00, 0x64, 0x07, 0xD0], response.ToBytes());
     }
 }
