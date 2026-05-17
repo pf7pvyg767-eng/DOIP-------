@@ -348,21 +348,23 @@ public class TcpDoipServerTests
     private static IUdsDispatcher CreateUdsDispatcher(IRuntimeEventPublisher eventPublisher)
     {
         var state = new EcuRuntimeState(0x0E00);
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
+            new DidConfig
+            {
+                Identifier = "0xF190",
+                Name = "VIN",
+                ValueEncoding = "hex",
+                Value = "4C54",
+            },
+        ];
+        var didRuntimeStore = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
         return new UdsDispatcher(
             [
                 new DiagnosticSessionControlService(state, eventPublisher),
                 new TesterPresentService(state),
-                new ReadDataByIdentifierService(
-                    [
-                        new DidConfig
-                        {
-                            Identifier = "0xF190",
-                            Name = "VIN",
-                            ValueEncoding = "hex",
-                            Value = "4C54",
-                        },
-                    ],
-                    eventPublisher),
+                new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
             ],
             eventPublisher);
     }

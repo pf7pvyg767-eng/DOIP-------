@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { loadDashboardState, type DashboardState } from "../api";
+import DidEditorPanel from "../components/DidEditorPanel.vue";
 import EventLogPanel from "../components/EventLogPanel.vue";
 import RealtimeObservationPanel from "../components/RealtimeObservationPanel.vue";
 import StatusPanel from "../components/StatusPanel.vue";
@@ -52,6 +53,8 @@ async function load(): Promise<void> {
       <StatusPanel :health="state.health" />
 
       <RealtimeObservationPanel />
+
+      <DidEditorPanel />
 
       <EventLogPanel />
 

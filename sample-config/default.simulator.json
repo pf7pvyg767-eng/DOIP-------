@@ -25,7 +25,14 @@
         "identifier": "0xF190",
         "name": "VIN",
         "valueEncoding": "hex",
-        "value": "4C54455354303030303030303030303031"
+        "value": "4C54455354303030303030303030303031",
+        "writable": true,
+        "writeLength": 17,
+        "allowedWriteSessions": [
+          "default",
+          "extended"
+        ],
+        "requiredSecurityState": null
       }
     ],
     "dtcs": [],

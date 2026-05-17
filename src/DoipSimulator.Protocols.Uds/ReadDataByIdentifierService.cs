@@ -1,4 +1,3 @@
-using System.Globalization;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.RuntimeEvents;
 
@@ -8,25 +7,14 @@ public sealed class ReadDataByIdentifierService : IUdsService
 {
     public const byte Sid = 0x22;
 
-    private readonly IReadOnlyDictionary<ushort, byte[]> fixedDids;
+    private readonly DidRuntimeStore didRuntimeStore;
     private readonly IRuntimeEventPublisher eventPublisher;
 
     public ReadDataByIdentifierService(
-        IEnumerable<DidConfig> dids,
+        DidRuntimeStore didRuntimeStore,
         IRuntimeEventPublisher? eventPublisher = null)
     {
-        fixedDids = dids
-            .Where(did => ConfigValidator.TryParseDidIdentifier(did, out _)
-                && string.Equals(did.ValueEncoding, "hex", StringComparison.OrdinalIgnoreCase)
-                && TryParseHexBytes(did.Value, out _))
-            .Select(did =>
-            {
-                ConfigValidator.TryParseDidIdentifier(did, out var identifier);
-                TryParseHexBytes(did.Value, out var value);
-                return new KeyValuePair<ushort, byte[]>(identifier, value!);
-            })
-            .GroupBy(item => item.Key)
-            .ToDictionary(group => group.Key, group => group.Last().Value);
+        this.didRuntimeStore = didRuntimeStore;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
     }
 
@@ -45,7 +33,7 @@ public sealed class ReadDataByIdentifierService : IUdsService
         var requestedDids = ParseRequestedDids(request.Payload);
         foreach (var did in requestedDids)
         {
-            if (!fixedDids.ContainsKey(did))
+            if (!didRuntimeStore.TryRead(did, out _))
             {
                 return [new NegativeResponse(request.OriginalServiceId, NegativeResponseCode.RequestOutOfRange)];
             }
@@ -55,7 +43,7 @@ public sealed class ReadDataByIdentifierService : IUdsService
         for (var index = 0; index < requestedDids.Count; index++)
         {
             var did = requestedDids[index];
-            var value = fixedDids[did];
+            didRuntimeStore.TryRead(did, out var value);
             responseBytes.Add((byte)(did >> 8));
             responseBytes.Add((byte)(did & 0xFF));
             responseBytes.AddRange(value);
@@ -102,26 +90,6 @@ public sealed class ReadDataByIdentifierService : IUdsService
                     ["requestIndex"] = requestIndex,
                 }),
             cancellationToken);
-    }
-
-    private static bool TryParseHexBytes(string? value, out byte[]? bytes)
-    {
-        bytes = null;
-        if (string.IsNullOrWhiteSpace(value) || value.Length % 2 != 0 || !value.All(Uri.IsHexDigit))
-        {
-            return false;
-        }
-
-        bytes = new byte[value.Length / 2];
-        for (var index = 0; index < bytes.Length; index++)
-        {
-            bytes[index] = byte.Parse(
-                value.AsSpan(index * 2, 2),
-                NumberStyles.HexNumber,
-                CultureInfo.InvariantCulture);
-        }
-
-        return true;
     }
 
     private static string FormatDid(ushort did) => $"0x{did:X4}";

@@ -181,19 +181,24 @@ namespace DoipSimulator.Host
                 await using var eventSink = new FileRuntimeEventSink(logPath);
                 var eventHub = new RuntimeEventHub();
                 var eventPublisher = new RuntimeEventBus([eventSink, eventHub]);
-                var config = await new ConfigStore(eventPublisher).LoadAsync(options.ResolveConfigPath(), shutdown.Token);
+                var configPath = options.ResolveConfigPath();
+                var configStore = new ConfigStore(eventPublisher);
+                var config = await configStore.LoadAsync(configPath, shutdown.Token);
+                var didRuntimeStore = new DidRuntimeStore(config, configPath, configStore, eventPublisher);
                 var connectionRegistry = new ConnectionRegistry();
                 var ecuRuntimeState = new EcuRuntimeState(TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress));
                 await using var udpServer = CreateUdpServer(config, eventPublisher);
-                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState);
+                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
-                    new WebApiRuntimeOptions(options.ListenAddress, options.Port, startedAt),
+                    new WebApiRuntimeOptions(options.ListenAddress, options.Port, startedAt, configPath),
+                    configStore,
                     runtimeEventPublisher: eventPublisher,
                     runtimeEventHub: eventHub,
                     connectionRegistry: connectionRegistry,
-                    ecuRuntimeState: ecuRuntimeState);
+                    ecuRuntimeState: ecuRuntimeState,
+                    didRuntimeStore: didRuntimeStore);
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
@@ -289,7 +294,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, and fixed-byte DID reads; it does not start SecurityAccess, DID writes, DTC/Routine, flashing, TLS, PCAP, database, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, fixed-byte DID reads, and writable fixed-byte DID runtime updates; it does not start SecurityAccess unlock, DTC/Routine, flashing, TLS, PCAP, database, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -321,7 +326,8 @@ namespace DoipSimulator.Host
             SimulatorConfig config,
             IRuntimeEventPublisher eventPublisher,
             ConnectionRegistry connectionRegistry,
-            EcuRuntimeState ecuRuntimeState)
+            EcuRuntimeState ecuRuntimeState,
+            DidRuntimeStore didRuntimeStore)
         {
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
@@ -342,7 +348,8 @@ namespace DoipSimulator.Host
                     [
                         new DiagnosticSessionControlService(ecuRuntimeState, eventPublisher),
                         new TesterPresentService(ecuRuntimeState),
-                        new ReadDataByIdentifierService(config.Uds.Dids, eventPublisher),
+                        new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
+                        new WriteDataByIdentifierService(didRuntimeStore, ecuRuntimeState),
                     ],
                     eventPublisher));
         }

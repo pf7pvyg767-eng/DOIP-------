@@ -28,6 +28,12 @@ public sealed record EcuStateSnapshot(
     string SecurityStateSummary,
     DateTimeOffset? LastTesterPresentAt);
 
+public sealed record DidValueUpdateRequest(string? ValueEncoding, string? Value, bool Persist = false);
+
+public sealed record DidValueUpdateResponse(string Did, string ValueEncoding, string Value, bool Persisted);
+
+public sealed record DidErrorResponse(string Code, string Message);
+
 public static class WebApiApplication
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -40,7 +46,8 @@ public static class WebApiApplication
         IRuntimeEventPublisher? runtimeEventPublisher = null,
         RuntimeEventHub? runtimeEventHub = null,
         ConnectionRegistry? connectionRegistry = null,
-        EcuRuntimeState? ecuRuntimeState = null)
+        EcuRuntimeState? ecuRuntimeState = null,
+        DidRuntimeStore? didRuntimeStore = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -53,6 +60,11 @@ public static class WebApiApplication
         var configPath = ResolveConfigPath(options.ConfigPath);
         var connections = connectionRegistry ?? new ConnectionRegistry();
         var ecuState = ecuRuntimeState ?? new EcuRuntimeState(0x0E00);
+        var didStore = didRuntimeStore ?? new DidRuntimeStore(
+            store.LoadAsync(configPath).GetAwaiter().GetResult(),
+            configPath,
+            store,
+            eventPublisher);
 
         app.UseWebSockets();
 
@@ -71,6 +83,54 @@ public static class WebApiApplication
         app.MapGet("/api/connections", () => Results.Ok(connections.GetActiveSnapshots()));
 
         app.MapGet("/api/ecu/state", () => Results.Ok(ToEcuStateSnapshot(ecuState)));
+
+        app.MapGet("/api/dids", () => Results.Ok(didStore.List()));
+
+        app.MapPut("/api/dids/{did}/value", async (
+            string did,
+            HttpRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            DidValueUpdateRequest? body;
+            try
+            {
+                body = await request.ReadFromJsonAsync<DidValueUpdateRequest>(JsonOptions, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_JSON", "Request body must be valid JSON."));
+            }
+
+            if (body is null || string.IsNullOrWhiteSpace(body.Value))
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_DID_VALUE", "DID value is required."));
+            }
+
+            if (!TryParseDidRouteValue(did, out var didId))
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_DID", "DID route value must be a 16-bit hex identifier."));
+            }
+
+            var result = await didStore.WriteHexAsync(
+                didId,
+                body.ValueEncoding ?? "hex",
+                body.Value,
+                ecuState,
+                "api",
+                body.Persist,
+                cancellationToken);
+
+            if (!result.Succeeded)
+            {
+                return ToDidWriteError(result);
+            }
+
+            return Results.Ok(new DidValueUpdateResponse(
+                DidRuntimeStore.FormatDid(didId),
+                "hex",
+                body.Value.ToUpperInvariant(),
+                body.Persist));
+        });
 
         app.MapPut("/api/config", async (HttpRequest request, CancellationToken cancellationToken) =>
         {
@@ -231,6 +291,29 @@ public static class WebApiApplication
         return string.IsNullOrWhiteSpace(configuredPath)
             ? Path.Combine(AppContext.BaseDirectory, "simulator.json")
             : configuredPath;
+    }
+
+    private static bool TryParseDidRouteValue(string value, out ushort did)
+    {
+        var normalized = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? value
+            : $"0x{value}";
+        return ConfigValidator.TryParseDidIdentifier(
+            new DidConfig { Identifier = normalized, ValueEncoding = "hex", Value = "00" },
+            out did);
+    }
+
+    private static IResult ToDidWriteError(DidWriteResult result)
+    {
+        var response = new DidErrorResponse(result.Failure.ToString(), result.Message ?? "DID write rejected.");
+        return result.Failure switch
+        {
+            DidWriteFailure.UnknownDid => Results.NotFound(response),
+            DidWriteFailure.NotWritable => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            DidWriteFailure.ConditionsNotCorrect => Results.Json(response, statusCode: StatusCodes.Status409Conflict),
+            DidWriteFailure.SecurityAccessDenied => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            _ => Results.BadRequest(response),
+        };
     }
 
     private static EcuStateSnapshot ToEcuStateSnapshot(EcuRuntimeState state)

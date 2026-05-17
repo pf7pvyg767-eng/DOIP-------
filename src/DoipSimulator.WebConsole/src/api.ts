@@ -75,6 +75,24 @@ export interface EcuStateSnapshot {
   lastTesterPresentAt?: string | null;
 }
 
+export interface DidSummary {
+  did: string;
+  name?: string | null;
+  valueEncoding: string;
+  value: string;
+  writable: boolean;
+  expectedLength?: number | null;
+  allowedWriteSessions: string[];
+  requiredSecurityState?: string | null;
+  permissionSummary: string;
+}
+
+export interface DidValueUpdateRequest {
+  valueEncoding: "hex";
+  value: string;
+  persist: boolean;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -119,6 +137,34 @@ export async function loadConnections(): Promise<ConnectionSnapshot[]> {
 
 export async function loadEcuState(): Promise<EcuStateSnapshot> {
   return getJson<EcuStateSnapshot>("/api/ecu/state");
+}
+
+export async function loadDids(): Promise<DidSummary[]> {
+  return getJson<DidSummary[]>("/api/dids");
+}
+
+export async function updateDidValue(did: string, body: DidValueUpdateRequest): Promise<void> {
+  const response = await fetch(`/api/dids/${encodeURIComponent(did.replace(/^0x/i, ""))}/value`, {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let message = `DID write failed with HTTP ${response.status}.`;
+    try {
+      const error = (await response.json()) as { message?: string };
+      if (error.message) {
+        message = error.message;
+      }
+    } catch {
+    }
+
+    throw new Error(message);
+  }
 }
 
 export function createRuntimeEventSocket(): WebSocket {

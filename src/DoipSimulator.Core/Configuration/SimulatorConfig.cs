@@ -44,6 +44,9 @@ public sealed class SimulatorConfig
                         Name = "VIN",
                         ValueEncoding = "hex",
                         Value = "4C54455354303030303030303030303031",
+                        Writable = true,
+                        WriteLength = 17,
+                        AllowedWriteSessions = ["default", "extended"],
                     },
                 ],
                 Dtcs = [],
@@ -124,6 +127,14 @@ public sealed class DidConfig
     public string ValueEncoding { get; set; } = "hex";
 
     public string? Value { get; set; }
+
+    public bool Writable { get; set; }
+
+    public int? WriteLength { get; set; }
+
+    public List<string> AllowedWriteSessions { get; set; } = [];
+
+    public string? RequiredSecurityState { get; set; }
 }
 
 public sealed class DtcConfig
