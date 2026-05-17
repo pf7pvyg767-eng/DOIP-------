@@ -31,6 +31,7 @@ public sealed class SimulatorConfig
                 VehicleAnnouncementIntervalMilliseconds = 1000,
                 VehicleAnnouncementTargetAddress = "255.255.255.255",
                 VehicleAnnouncementTargetPort = 13400,
+                TcpConnectionIdleTimeoutMilliseconds = 30000,
                 SourceAddressWhitelist = ["0x0E80"],
             },
             Uds = new UdsConfig
@@ -82,6 +83,8 @@ public sealed class NetworkConfig
     public string VehicleAnnouncementTargetAddress { get; set; } = "255.255.255.255";
 
     public int VehicleAnnouncementTargetPort { get; set; } = 13400;
+
+    public int TcpConnectionIdleTimeoutMilliseconds { get; set; } = 30000;
 
     public List<string> SourceAddressWhitelist { get; set; } = [];
 }

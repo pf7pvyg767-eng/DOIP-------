@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Observability.Logging;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Host;
 using DoipSimulator.Protocols.Doip;
+using DoipSimulator.Transport.Tcp;
 using DoipSimulator.Transport.Udp;
 using DoipSimulator.WebApi;
 using Microsoft.Extensions.Hosting;
@@ -179,6 +181,7 @@ namespace DoipSimulator.Host
                 var eventPublisher = new RuntimeEventBus([eventSink, eventHub]);
                 var config = await new ConfigStore(eventPublisher).LoadAsync(options.ResolveConfigPath(), shutdown.Token);
                 await using var udpServer = CreateUdpServer(config, eventPublisher);
+                await using var tcpServer = CreateTcpServer(config, eventPublisher);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
@@ -188,6 +191,7 @@ namespace DoipSimulator.Host
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
+                await tcpServer.StartAsync(shutdown.Token);
                 await eventPublisher.PublishAsync(
                     RuntimeEvent.Create(
                         RuntimeEventLevel.Info,
@@ -199,6 +203,7 @@ namespace DoipSimulator.Host
                             ["listenAddress"] = options.ListenAddress,
                             ["port"] = options.Port,
                             ["doipUdpPort"] = udpServer.BoundPort,
+                            ["doipTcpPort"] = tcpServer.BoundPort,
                             ["startedAt"] = startedAt,
                         }),
                     shutdown.Token);
@@ -278,7 +283,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi and UDP DoIP vehicle discovery only; it does not start TCP, routing activation, UDS, TLS, PCAP, database, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, and TCP DoIP routing activation; it does not start UDS, TLS, PCAP, database, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -304,6 +309,27 @@ namespace DoipSimulator.Host
                 eventPublisher);
 
             return new UdpDoipServer(options, handler);
+        }
+
+        private static TcpDoipServer CreateTcpServer(
+            SimulatorConfig config,
+            IRuntimeEventPublisher eventPublisher)
+        {
+            var bindAddress = IPAddress.Parse(config.Network.BindAddress);
+            var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
+            var sourceAddressWhitelist = TcpDoipServer.ParseSourceAddressWhitelist(config.Network.SourceAddressWhitelist);
+            var options = new TcpDoipServerOptions(
+                bindAddress,
+                config.Network.DoipTcpPort,
+                entityLogicalAddress,
+                sourceAddressWhitelist,
+                TimeSpan.FromMilliseconds(config.Network.TcpConnectionIdleTimeoutMilliseconds));
+
+            return new TcpDoipServer(
+                options,
+                new DoipCodec(),
+                new ConnectionRegistry(),
+                eventPublisher);
         }
     }
 

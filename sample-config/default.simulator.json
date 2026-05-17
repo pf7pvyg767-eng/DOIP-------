@@ -14,6 +14,7 @@
     "vehicleAnnouncementIntervalMilliseconds": 1000,
     "vehicleAnnouncementTargetAddress": "255.255.255.255",
     "vehicleAnnouncementTargetPort": 13400,
+    "tcpConnectionIdleTimeoutMilliseconds": 30000,
     "sourceAddressWhitelist": [
       "0x0E80"
     ]

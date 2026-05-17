@@ -1,0 +1,93 @@
+{
+  "task": "task-010",
+  "status": "completed",
+  "verified_at": "2026-05-16T23:32:17.3590412+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "implementation_tree": "C:/Users/hello/multica_workspaces_desktop-api.multica.ai/82820572-6c1f-4353-b094-74ba05c9ec12/4a25195e/workdir/DOIP-------",
+  "commands": [
+    {
+      "command": "openspec validate task-010 --strict",
+      "status": "passed",
+      "summary": "Change 'task-010' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "Build passed with 0 errors and 6 NU1900 NuGet vulnerability feed warnings."
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "56 passed, 0 failed, 0 skipped."
+    }
+  ],
+  "lint": {
+    "required": false,
+    "status": "not_run",
+    "summary": "dotnet format is optional and non-blocking only with an explicit timeout; it was not run for this verification."
+  },
+  "frontend": {
+    "changed": false,
+    "npm_required": false,
+    "summary": "git diff and untracked file checks show no frontend files changed for task-010; npm build is not required."
+  },
+  "acceptance": [
+    {
+      "criterion": "TCP client can establish a connection.",
+      "status": "passed",
+      "evidence": "TcpDoipServerTests.LocalTcpClientCompletesRoutingActivationAndAliveCheck connects a local TcpClient to the server."
+    },
+    {
+      "criterion": "Allowed tester logical source address can complete Routing Activation.",
+      "status": "passed",
+      "evidence": "TcpDoipServerTests.LocalTcpClientCompletesRoutingActivationAndAliveCheck verifies SuccessfullyActivated response and registry activation."
+    },
+    {
+      "criterion": "Non-whitelisted tester logical source address Routing Activation fails.",
+      "status": "passed",
+      "evidence": "TcpDoipServerTests.NonWhitelistedSourceAddressReceivesDeniedActivation verifies DeniedUnknownSourceAddress and no activated registry entry."
+    },
+    {
+      "criterion": "TCP half-frame parsing is correct.",
+      "status": "passed",
+      "evidence": "TcpDoipServerTests.StreamReaderBuffersHalfFrameUntilComplete verifies partial data is buffered until the complete frame arrives."
+    },
+    {
+      "criterion": "TCP sticky/continuous frames produce multiple frames correctly.",
+      "status": "passed",
+      "evidence": "TcpDoipServerTests.StreamReaderReturnsMultipleFramesFromSingleBuffer verifies Routing Activation and Alive Check frames from one buffer."
+    },
+    {
+      "criterion": "Disconnect removes connection state from registry or marks it disconnected.",
+      "status": "passed",
+      "evidence": "TcpDoipServerTests.DisconnectRemovesConnectionFromRegistryAndPublishesEvent waits until active snapshots are empty and checks disconnect event."
+    },
+    {
+      "criterion": "Connection created, disconnected, and timeout events enter the existing structured log and Web log UI pipeline.",
+      "status": "passed",
+      "evidence": "TcpDoipServer publishes RuntimeEventCategory.Doip events through RuntimeEventBus; TcpDoipServerTests cover created, disconnected, and timeout event names."
+    },
+    {
+      "criterion": "Alive Check Request receives a basic response.",
+      "status": "passed",
+      "evidence": "RoutingActivationTests.AliveCheckResponseContainsEntityLogicalAddress and TcpDoipServerTests.LocalTcpClientCompletesRoutingActivationAndAliveCheck verify Alive Check response."
+    }
+  ],
+  "scope_check": [
+    { "item": "No UDS business response implemented.", "status": "passed" },
+    { "item": "No TLS implementation added.", "status": "passed" },
+    { "item": "No complex fault injection implemented.", "status": "passed" },
+    { "item": "No new UDP behavior beyond existing DoIP UDP vehicle discovery implemented.", "status": "passed" },
+    { "item": "No diagnostic forwarding or UDS service handler implemented.", "status": "passed" },
+    { "item": "No new Web UI page, complex chart, or connection management editing UI added.", "status": "passed" },
+    { "item": "No PCAP, external observability integration, or security audit report implemented.", "status": "passed" }
+  ],
+  "warnings": [
+    "dotnet build/test emitted NU1900 warnings because NuGet vulnerability feed data could not be fetched; this is non-blocking and did not affect build or test success.",
+    "Required issue read via multica issue get failed twice due the local proxy forcibly closing the connection; full comment history was available and used to verify the triggering task context."
+  ],
+  "decision": "task-010 can proceed to push/PR"
+}
