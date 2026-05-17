@@ -57,6 +57,24 @@ export interface RuntimeEvent {
   data?: Record<string, unknown> | null;
 }
 
+export interface ConnectionSnapshot {
+  connectionId: string;
+  transport: string;
+  remoteEndpoint: string;
+  routingActivated: boolean;
+  testerLogicalAddress?: string | null;
+  ecuLogicalAddress?: string | null;
+  connectedAt: string;
+  state: string;
+}
+
+export interface EcuStateSnapshot {
+  logicalAddress: string;
+  currentSession: string;
+  securityStateSummary: string;
+  lastTesterPresentAt?: string | null;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -93,6 +111,14 @@ export async function loadRecentEvents(limit = 200, category = ""): Promise<Runt
   }
 
   return getJson<RuntimeEvent[]>(`/api/events/recent?${parameters.toString()}`);
+}
+
+export async function loadConnections(): Promise<ConnectionSnapshot[]> {
+  return getJson<ConnectionSnapshot[]>("/api/connections");
+}
+
+export async function loadEcuState(): Promise<EcuStateSnapshot> {
+  return getJson<EcuStateSnapshot>("/api/ecu/state");
 }
 
 export function createRuntimeEventSocket(): WebSocket {

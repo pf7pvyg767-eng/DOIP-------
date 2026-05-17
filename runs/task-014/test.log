@@ -1,0 +1,63 @@
+# task-014 独立 Test & Status 报告
+
+验证时间：2026-05-17 16:41 +08:00
+验证 worktree：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\4a25195e\workdir\DOIP-------
+验证分支：agent/task-013-did-read-data-by-identifier
+
+## 核心命令
+
+1. openspec validate task-014 --strict
+结果：通过
+关键输出：Change 'task-014' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+结论：0 errors；存在 NU1900 NuGet vulnerability feed 访问警告，按任务规则记录为非阻塞。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+结果：通过
+结论：92 passed, 0 failed, 0 skipped；存在同类 NU1900 非阻塞警告。
+测试分布：
+- DoipSimulator.Core.Tests：33 passed
+- DoipSimulator.Protocols.Doip.Tests：14 passed
+- DoipSimulator.Transport.Tests：19 passed
+- DoipSimulator.Protocols.Uds.Tests：26 passed
+
+4. npm run build
+结果：通过
+说明：
+- 首次执行时 `vue-tsc` 不存在，确认为前端依赖未安装。
+- 执行 `npm ci` 时沙箱内出现 `spawn EPERM`，按权限规则在沙箱外复跑后通过：added 45 packages, audited 46 packages, found 0 vulnerabilities。
+- 沙箱内再次执行 `npm run build` 时 Vite/esbuild 子进程出现 `spawn EPERM`，按权限规则在沙箱外复跑后通过。
+关键输出：
+- vite v7.3.3 building client environment for production
+- 20 modules transformed
+- dist/index.html 0.42 kB
+- dist/assets/index-DPeeWg3N.css 4.53 kB
+- dist/assets/index-CpbisB9Z.js 80.11 kB
+- built in 907ms
+
+## 验收点复核
+
+- 连接列表 UI 可展示连接并响应连接打开/关闭：通过。`RealtimeObservationPanel.vue` 处理 `connection.opened` 和 `connection.closed`，连接列表按快照和事件更新。
+- DoIP 报文列表 UI 可展示收发方向：通过。`RealtimeObservationPanel.vue` 处理 `doip.frame.received` / `doip.frame.sent`，并展示 direction 字段。
+- UDS 报文列表 UI 可展示请求/响应：通过。`RealtimeObservationPanel.vue` 处理 `uds.request.received` / `uds.response.sent`，并展示 request / response 方向。
+- ECU 状态面板可展示当前状态，并在会话切换后实时更新：通过。`RealtimeObservationPanel.vue` 加载 `GET /api/ecu/state`，并处理 `state.session.changed` 更新会话状态。
+- 基础过滤可过滤连接、DoIP 报文、UDS 报文：通过。`RealtimeObservationPanel.vue` 提供连接、方向和关键字过滤，并分别用于连接、DoIP、UDS 列表。
+- `GET /api/connections` 和 `GET /api/ecu/state` 为只读快照 API：通过。`WebApiApplication` 使用 `MapGet` 暴露两个只读端点，测试 `RealtimeObservationApiTests` 覆盖连接快照、空连接列表和 ECU 状态快照。
+- WebSocket 继续复用 `RuntimeEvent` 并覆盖指定事件：通过。后端事件与测试覆盖 `connection.opened`、`connection.closed`、`doip.frame.received`、`doip.frame.sent`、`uds.request.received`、`uds.response.sent`、`state.session.changed`。
+
+## Scope check
+
+- 未实现报文重放：通过。
+- 未实现图表分析：通过。
+- 未实现 pcap 下载：通过。
+- 未新增诊断服务：通过；仅补充既有 RuntimeEvent 摘要与 UI 消费逻辑。
+- 未新增 DID/DTC/Routine/Flash/SecurityAccess 管理界面：通过。
+- 未做无关重构：通过；变更集中在实时观察 UI、只读状态 API、事件摘要字段和对应测试。
+
+## 结论
+
+`task-014` 独立 Test & Status 通过，状态标记为 completed。可进入 push/PR 步骤。
+
+补充：未执行 `dotnet format`；该项按任务规则属于带明确超时的非阻塞可选检查，不属于本次核心验收阻塞项。

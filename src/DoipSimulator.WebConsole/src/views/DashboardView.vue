@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { loadDashboardState, type DashboardState } from "../api";
 import EventLogPanel from "../components/EventLogPanel.vue";
+import RealtimeObservationPanel from "../components/RealtimeObservationPanel.vue";
 import StatusPanel from "../components/StatusPanel.vue";
 
 const state = ref<DashboardState | null>(null);
@@ -49,6 +50,8 @@ async function load(): Promise<void> {
 
     <template v-else-if="state">
       <StatusPanel :health="state.health" />
+
+      <RealtimeObservationPanel />
 
       <EventLogPanel />
 

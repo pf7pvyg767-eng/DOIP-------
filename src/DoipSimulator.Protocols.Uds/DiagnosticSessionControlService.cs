@@ -69,23 +69,44 @@ public sealed class DiagnosticSessionControlService : IUdsService
         byte subFunction,
         CancellationToken cancellationToken)
     {
-        return eventPublisher.PublishAsync(
+        var data = new Dictionary<string, object?>
+        {
+            ["connectionId"] = context.ConnectionId,
+            ["remoteEndpoint"] = context.RemoteEndpoint,
+            ["testerLogicalAddress"] = context.TesterLogicalAddress,
+            ["ecuLogicalAddress"] = context.EcuLogicalAddress ?? FormatLogicalAddress(state.LogicalAddress),
+            ["previousSession"] = FormatSession(previous),
+            ["newSession"] = FormatSession(current),
+            ["currentSession"] = FormatSession(current),
+            ["subFunction"] = $"0x{subFunction:X2}",
+        };
+
+        return PublishSessionChangedEventsAsync(context.ConnectionId, data, cancellationToken);
+    }
+
+    private async ValueTask PublishSessionChangedEventsAsync(
+        string? connectionId,
+        Dictionary<string, object?> data,
+        CancellationToken cancellationToken)
+    {
+        await eventPublisher.PublishAsync(
             RuntimeEvent.Create(
                 RuntimeEventLevel.Info,
                 RuntimeEventCategory.Uds,
                 "uds.session.changed",
                 "UDS diagnostic session accepted.",
-                context.ConnectionId,
-                new Dictionary<string, object?>
-                {
-                    ["connectionId"] = context.ConnectionId,
-                    ["remoteEndpoint"] = context.RemoteEndpoint,
-                    ["testerLogicalAddress"] = context.TesterLogicalAddress,
-                    ["ecuLogicalAddress"] = context.EcuLogicalAddress ?? FormatLogicalAddress(state.LogicalAddress),
-                    ["previousSession"] = FormatSession(previous),
-                    ["newSession"] = FormatSession(current),
-                    ["subFunction"] = $"0x{subFunction:X2}",
-                }),
+                connectionId,
+                data),
+            cancellationToken);
+
+        await eventPublisher.PublishAsync(
+            RuntimeEvent.Create(
+                RuntimeEventLevel.Info,
+                RuntimeEventCategory.State,
+                "state.session.changed",
+                "ECU diagnostic session changed.",
+                connectionId,
+                data),
             cancellationToken);
     }
 

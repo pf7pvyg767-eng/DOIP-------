@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Text.Json;
+using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
+using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.WebApi;
@@ -20,6 +22,12 @@ public sealed record ConfigValidationErrorResponse(
 
 public sealed record ConfigValidationErrorDetail(string Path, string Message);
 
+public sealed record EcuStateSnapshot(
+    string LogicalAddress,
+    string CurrentSession,
+    string SecurityStateSummary,
+    DateTimeOffset? LastTesterPresentAt);
+
 public static class WebApiApplication
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -30,7 +38,9 @@ public static class WebApiApplication
         ConfigStore? configStore = null,
         IConfigChangePublisher? configChangePublisher = null,
         IRuntimeEventPublisher? runtimeEventPublisher = null,
-        RuntimeEventHub? runtimeEventHub = null)
+        RuntimeEventHub? runtimeEventHub = null,
+        ConnectionRegistry? connectionRegistry = null,
+        EcuRuntimeState? ecuRuntimeState = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -41,6 +51,8 @@ public static class WebApiApplication
         var store = configStore ?? new ConfigStore(eventPublisher);
         var publisher = configChangePublisher ?? NullConfigChangePublisher.Instance;
         var configPath = ResolveConfigPath(options.ConfigPath);
+        var connections = connectionRegistry ?? new ConnectionRegistry();
+        var ecuState = ecuRuntimeState ?? new EcuRuntimeState(0x0E00);
 
         app.UseWebSockets();
 
@@ -55,6 +67,10 @@ public static class WebApiApplication
             var config = await store.LoadAsync(configPath, cancellationToken);
             return Results.Ok(config);
         });
+
+        app.MapGet("/api/connections", () => Results.Ok(connections.GetActiveSnapshots()));
+
+        app.MapGet("/api/ecu/state", () => Results.Ok(ToEcuStateSnapshot(ecuState)));
 
         app.MapPut("/api/config", async (HttpRequest request, CancellationToken cancellationToken) =>
         {
@@ -215,6 +231,26 @@ public static class WebApiApplication
         return string.IsNullOrWhiteSpace(configuredPath)
             ? Path.Combine(AppContext.BaseDirectory, "simulator.json")
             : configuredPath;
+    }
+
+    private static EcuStateSnapshot ToEcuStateSnapshot(EcuRuntimeState state)
+    {
+        return new EcuStateSnapshot(
+            $"0x{state.LogicalAddress:X4}",
+            FormatSession(state.CurrentSession),
+            state.SecurityStateSummary,
+            state.LastTesterPresentAt);
+    }
+
+    private static string FormatSession(DiagnosticSession session)
+    {
+        return session switch
+        {
+            DiagnosticSession.Default => "default",
+            DiagnosticSession.Programming => "programming",
+            DiagnosticSession.Extended => "extended",
+            _ => session.ToString().ToLowerInvariant(),
+        };
     }
 
     private static ConfigValidationErrorResponse ToErrorResponse(IReadOnlyList<ConfigValidationError> errors)

@@ -182,14 +182,18 @@ namespace DoipSimulator.Host
                 var eventHub = new RuntimeEventHub();
                 var eventPublisher = new RuntimeEventBus([eventSink, eventHub]);
                 var config = await new ConfigStore(eventPublisher).LoadAsync(options.ResolveConfigPath(), shutdown.Token);
+                var connectionRegistry = new ConnectionRegistry();
+                var ecuRuntimeState = new EcuRuntimeState(TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress));
                 await using var udpServer = CreateUdpServer(config, eventPublisher);
-                await using var tcpServer = CreateTcpServer(config, eventPublisher);
+                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
                     new WebApiRuntimeOptions(options.ListenAddress, options.Port, startedAt),
                     runtimeEventPublisher: eventPublisher,
-                    runtimeEventHub: eventHub);
+                    runtimeEventHub: eventHub,
+                    connectionRegistry: connectionRegistry,
+                    ecuRuntimeState: ecuRuntimeState);
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
@@ -315,12 +319,13 @@ namespace DoipSimulator.Host
 
         private static TcpDoipServer CreateTcpServer(
             SimulatorConfig config,
-            IRuntimeEventPublisher eventPublisher)
+            IRuntimeEventPublisher eventPublisher,
+            ConnectionRegistry connectionRegistry,
+            EcuRuntimeState ecuRuntimeState)
         {
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
             var sourceAddressWhitelist = TcpDoipServer.ParseSourceAddressWhitelist(config.Network.SourceAddressWhitelist);
-            var ecuRuntimeState = new EcuRuntimeState(entityLogicalAddress);
             var options = new TcpDoipServerOptions(
                 bindAddress,
                 config.Network.DoipTcpPort,
@@ -331,7 +336,7 @@ namespace DoipSimulator.Host
             return new TcpDoipServer(
                 options,
                 new DoipCodec(),
-                new ConnectionRegistry(),
+                connectionRegistry,
                 eventPublisher,
                 new UdsDispatcher(
                     [
