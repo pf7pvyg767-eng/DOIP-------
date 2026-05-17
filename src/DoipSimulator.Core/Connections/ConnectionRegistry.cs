@@ -7,7 +7,8 @@ public sealed record ConnectionSnapshot(
     bool RoutingActivated,
     string? TesterLogicalAddress,
     string? EcuLogicalAddress,
-    DateTimeOffset ConnectedAt);
+    DateTimeOffset ConnectedAt,
+    string State = "open");
 
 public sealed class ConnectionRegistry
 {

@@ -219,6 +219,14 @@ public sealed class TcpDoipServer : IAsyncDisposable
 
                 foreach (var frame in readResult.Frames)
                 {
+                    await PublishDoipFrameEventAsync(
+                        "doip.frame.received",
+                        "DoIP frame received.",
+                        connection.ConnectionId,
+                        remoteEndpoint,
+                        frame,
+                        "received",
+                        cancellationToken);
                     await HandleFrameAsync(connection.ConnectionId, remoteEndpoint, frame, networkStream, cancellationToken);
                 }
             }
@@ -285,6 +293,17 @@ public sealed class TcpDoipServer : IAsyncDisposable
             }
 
             await networkStream.WriteAsync(encoded.Value, cancellationToken);
+            await PublishDoipFrameEventAsync(
+                "doip.frame.sent",
+                "DoIP frame sent.",
+                connectionId,
+                remoteEndpoint,
+                DoipFrame.Create(
+                    DoipCodec.Iso13400ProtocolVersion,
+                    DoipPayloadType.AliveCheckResponse,
+                    encoded.Value.AsSpan(DoipCodec.HeaderLength).ToArray()),
+                "sent",
+                cancellationToken);
             await eventPublisher.PublishAsync(
                 RuntimeEvent.Create(
                     RuntimeEventLevel.Info,
@@ -354,6 +373,17 @@ public sealed class TcpDoipServer : IAsyncDisposable
             }
 
             await networkStream.WriteAsync(encoded.Value, cancellationToken);
+            await PublishDoipFrameEventAsync(
+                "doip.frame.sent",
+                "DoIP frame sent.",
+                connectionId,
+                remoteEndpoint,
+                DoipFrame.Create(
+                    DoipCodec.Iso13400ProtocolVersion,
+                    DoipPayloadType.DiagnosticMessage,
+                    CreateDiagnosticResponsePayload(ecuLogicalAddress, testerLogicalAddress, response.ToBytes())),
+                "sent",
+                cancellationToken);
         }
     }
 
@@ -395,6 +425,17 @@ public sealed class TcpDoipServer : IAsyncDisposable
         }
 
         await networkStream.WriteAsync(encoded.Value, cancellationToken);
+        await PublishDoipFrameEventAsync(
+            "doip.frame.sent",
+            "DoIP frame sent.",
+            connectionId,
+            remoteEndpoint,
+            DoipFrame.Create(
+                DoipCodec.Iso13400ProtocolVersion,
+                DoipPayloadType.RoutingActivationResponse,
+                encoded.Value.AsSpan(DoipCodec.HeaderLength).ToArray()),
+            "sent",
+            cancellationToken);
         await eventPublisher.PublishAsync(
             RuntimeEvent.Create(
                 allowed ? RuntimeEventLevel.Info : RuntimeEventLevel.Warning,
@@ -413,27 +454,38 @@ public sealed class TcpDoipServer : IAsyncDisposable
             cancellationToken);
     }
 
-    private ValueTask PublishConnectionEventAsync(
+    private async ValueTask PublishConnectionEventAsync(
         string name,
         string message,
         ConnectionSnapshot connection,
         CancellationToken cancellationToken)
     {
-        return eventPublisher.PublishAsync(
+        var isClosed = name.Contains("disconnected", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("timeout", StringComparison.OrdinalIgnoreCase);
+        var data = CreateConnectionEventData(connection, isClosed ? "closed" : connection.State);
+
+        await eventPublisher.PublishAsync(
             RuntimeEvent.Create(
                 RuntimeEventLevel.Info,
                 RuntimeEventCategory.Doip,
                 name,
                 message,
                 connection.ConnectionId,
-                new Dictionary<string, object?>
-                {
-                    ["connectionId"] = connection.ConnectionId,
-                    ["transport"] = connection.Transport,
-                    ["remoteEndpoint"] = connection.RemoteEndpoint,
-                    ["connectedAt"] = connection.ConnectedAt,
-                }),
+                data),
             cancellationToken);
+
+        if (name is "doip.tcp.connection.created" or "doip.tcp.connection.disconnected" or "doip.tcp.connection.timeout")
+        {
+            await eventPublisher.PublishAsync(
+                RuntimeEvent.Create(
+                    RuntimeEventLevel.Info,
+                    RuntimeEventCategory.Connection,
+                    isClosed ? "connection.closed" : "connection.opened",
+                    isClosed ? "Connection closed." : "Connection opened.",
+                    connection.ConnectionId,
+                    data),
+                cancellationToken);
+        }
     }
 
     private ValueTask PublishProtocolErrorAsync(
@@ -466,6 +518,52 @@ public sealed class TcpDoipServer : IAsyncDisposable
             cancellationToken);
     }
 
+    private ValueTask PublishDoipFrameEventAsync(
+        string name,
+        string message,
+        string connectionId,
+        string remoteEndpoint,
+        DoipFrame frame,
+        string direction,
+        CancellationToken cancellationToken)
+    {
+        return eventPublisher.PublishAsync(
+            RuntimeEvent.Create(
+                RuntimeEventLevel.Info,
+                RuntimeEventCategory.Doip,
+                name,
+                message,
+                connectionId,
+                new Dictionary<string, object?>
+                {
+                    ["connectionId"] = connectionId,
+                    ["remoteEndpoint"] = remoteEndpoint,
+                    ["direction"] = direction,
+                    ["payloadType"] = $"0x{frame.PayloadType.Value:X4}",
+                    ["payloadTypeName"] = frame.PayloadType.KnownName,
+                    ["payloadLength"] = frame.Payload.Length,
+                    ["payloadSummary"] = ToHex(frame.Payload),
+                }),
+            cancellationToken);
+    }
+
+    private static Dictionary<string, object?> CreateConnectionEventData(
+        ConnectionSnapshot connection,
+        string state)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["connectionId"] = connection.ConnectionId,
+            ["transport"] = connection.Transport,
+            ["remoteEndpoint"] = connection.RemoteEndpoint,
+            ["routingActivated"] = connection.RoutingActivated,
+            ["testerLogicalAddress"] = connection.TesterLogicalAddress,
+            ["ecuLogicalAddress"] = connection.EcuLogicalAddress,
+            ["connectedAt"] = connection.ConnectedAt,
+            ["state"] = state,
+        };
+    }
+
     public static IReadOnlySet<ushort> ParseSourceAddressWhitelist(IEnumerable<string> values)
     {
         return values
@@ -488,5 +586,10 @@ public sealed class TcpDoipServer : IAsyncDisposable
         System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(2, 2), targetAddress);
         udsPayload.CopyTo(payload.AsSpan(4));
         return payload;
+    }
+
+    private static string ToHex(ReadOnlySpan<byte> bytes)
+    {
+        return string.Join(' ', bytes.ToArray().Select(value => value.ToString("X2", CultureInfo.InvariantCulture)));
     }
 }

@@ -71,6 +71,9 @@ public class TcpDoipServerTests
         Assert.Equal(0x0E00, BinaryPrimitives.ReadUInt16BigEndian(aliveCheckResponse.Payload));
 
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.tcp.connection.created");
+        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "connection.opened");
+        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.frame.received");
+        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.frame.sent");
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.tcp.routing_activation.succeeded");
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.tcp.alive_check.responded");
     }
@@ -102,7 +105,16 @@ public class TcpDoipServerTests
         Assert.Equal(0x0E80, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(2, 2)));
         Assert.Equal([0x7F, 0x99, 0x11], diagnosticResponse.Payload[4..]);
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds && runtimeEvent.Name == "uds.request.received");
-        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds && runtimeEvent.Name == "uds.response.sent");
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.request.received" &&
+                runtimeEvent.Data!["byteSummary"]?.Equals("99") == true);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.response.sent" &&
+                runtimeEvent.Data!["byteSummary"]?.Equals("7F 99 11") == true);
     }
 
     [Fact]
@@ -162,6 +174,11 @@ public class TcpDoipServerTests
             runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
                 runtimeEvent.Name == "uds.session.changed" &&
                 runtimeEvent.Data!["newSession"]?.Equals("extended") == true);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.State &&
+                runtimeEvent.Name == "state.session.changed" &&
+                runtimeEvent.Data!["currentSession"]?.Equals("extended") == true);
     }
 
     [Fact]
@@ -261,6 +278,10 @@ public class TcpDoipServerTests
 
         await WaitUntilAsync(() => registry.GetActiveSnapshots().Count == 0);
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.tcp.connection.disconnected");
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Name == "connection.closed" &&
+                runtimeEvent.Data!["state"]?.Equals("closed") == true);
     }
 
     [Fact]

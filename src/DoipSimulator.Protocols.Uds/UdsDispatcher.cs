@@ -1,4 +1,5 @@
 using DoipSimulator.Core.RuntimeEvents;
+using System.Globalization;
 
 namespace DoipSimulator.Protocols.Uds;
 
@@ -81,6 +82,7 @@ public sealed class UdsDispatcher : IUdsDispatcher
                 CreateEventData(context, new Dictionary<string, object?>
                 {
                     ["serviceId"] = FormatByte(request.ServiceId),
+                    ["byteSummary"] = ToHex(ToBytes(request)),
                 })),
             cancellationToken);
     }
@@ -90,6 +92,8 @@ public sealed class UdsDispatcher : IUdsDispatcher
         var data = CreateEventData(context, new Dictionary<string, object?>
         {
             ["responseType"] = response.IsNegative ? "negative" : "positive",
+            ["responseSid"] = FormatByte(response.ToBytes()[0]),
+            ["byteSummary"] = ToHex(response.ToBytes()),
         });
 
         if (response is NegativeResponse negativeResponse)
@@ -142,4 +146,11 @@ public sealed class UdsDispatcher : IUdsDispatcher
     }
 
     private static string FormatByte(byte value) => $"0x{value:X2}";
+
+    private static byte[] ToBytes(UdsRequest request) => [request.ServiceId, .. request.Payload];
+
+    private static string ToHex(IReadOnlyList<byte> bytes)
+    {
+        return string.Join(' ', bytes.Select(value => value.ToString("X2", CultureInfo.InvariantCulture)));
+    }
 }
