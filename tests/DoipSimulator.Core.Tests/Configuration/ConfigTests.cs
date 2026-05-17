@@ -150,6 +150,26 @@ public class ConfigTests
     }
 
     [Fact]
+    public void DtcValidationReturnsFieldSpecificErrors()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dtcs =
+        [
+            new DtcConfig { Code = "0x12345G", Status = "0x2F" },
+            new DtcConfig { Code = "0x123456", Status = "0x100" },
+            new DtcConfig { Code = "123456", Status = "0x2F" },
+            new DtcConfig { Code = "0x123456", Status = "0x2F" },
+        ];
+
+        var validation = ConfigValidator.Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dtcs[0].code");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dtcs[1].status");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dtcs[3].code");
+    }
+
+    [Fact]
     public async Task DidConfigSupportsIdAliasWhenLoading()
     {
         var path = CreateTempConfigPath();

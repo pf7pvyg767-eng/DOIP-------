@@ -244,6 +244,70 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task ReadDtcInformationAfterRoutingActivationReturnsActiveDtc()
+    {
+        var events = new CapturingEventSink();
+        var eventPublisher = new RuntimeEventBus([events]);
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, dtcActive: true));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x19, 0x02, 0xFF]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal([0x59, 0x02, 0xFF, 0x12, 0x34, 0x56, 0x2F], diagnosticResponse.Payload[4..]);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.dtc.read" &&
+                runtimeEvent.Data!["returnedCount"]?.Equals(1) == true);
+    }
+
+    [Fact]
+    public async Task ClearDiagnosticInformationAfterRoutingActivationClearsActiveDtc()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        var dtcStore = CreateDtcRuntimeStore(eventPublisher, active: true);
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, dtcRuntimeStore: dtcStore));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x14, 0x12, 0x34, 0x56]));
+        var clearResponse = await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x19, 0x02, 0xFF]));
+        var readResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal([0x54], clearResponse.Payload[4..]);
+        Assert.Equal([0x59, 0x02, 0xFF], readResponse.Payload[4..]);
+        Assert.False(Assert.Single(dtcStore.List()).Active);
+    }
+
+    [Fact]
     public async Task NonWhitelistedSourceAddressReceivesDeniedActivation()
     {
         var registry = new ConnectionRegistry();
@@ -345,7 +409,10 @@ public class TcpDoipServerTests
             udsDispatcher);
     }
 
-    private static IUdsDispatcher CreateUdsDispatcher(IRuntimeEventPublisher eventPublisher)
+    private static IUdsDispatcher CreateUdsDispatcher(
+        IRuntimeEventPublisher eventPublisher,
+        bool dtcActive = false,
+        DtcRuntimeStore? dtcRuntimeStore = null)
     {
         var state = new EcuRuntimeState(0x0E00);
         var config = SimulatorConfig.CreateDefault();
@@ -360,13 +427,32 @@ public class TcpDoipServerTests
             },
         ];
         var didRuntimeStore = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
+        var dtcStore = dtcRuntimeStore ?? CreateDtcRuntimeStore(eventPublisher, dtcActive);
         return new UdsDispatcher(
             [
                 new DiagnosticSessionControlService(state, eventPublisher),
                 new TesterPresentService(state),
                 new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
+                new ReadDtcInformationService(dtcStore),
+                new ClearDiagnosticInformationService(dtcStore),
             ],
             eventPublisher);
+    }
+
+    private static DtcRuntimeStore CreateDtcRuntimeStore(IRuntimeEventPublisher eventPublisher, bool active)
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dtcs =
+        [
+            new DtcConfig
+            {
+                Code = "0x123456",
+                Name = "DoIP DTC",
+                Status = "0x2F",
+                Active = active,
+            },
+        ];
+        return new DtcRuntimeStore(config, eventPublisher);
     }
 
     private byte[] CreateRoutingActivationFrame(ushort testerLogicalAddress)

@@ -34,6 +34,10 @@ public sealed record DidValueUpdateResponse(string Did, string ValueEncoding, st
 
 public sealed record DidErrorResponse(string Code, string Message);
 
+public sealed record DtcActivateRequest(string? Status, string? Description);
+
+public sealed record DtcErrorResponse(string Code, string Message);
+
 public static class WebApiApplication
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -47,7 +51,8 @@ public static class WebApiApplication
         RuntimeEventHub? runtimeEventHub = null,
         ConnectionRegistry? connectionRegistry = null,
         EcuRuntimeState? ecuRuntimeState = null,
-        DidRuntimeStore? didRuntimeStore = null)
+        DidRuntimeStore? didRuntimeStore = null,
+        DtcRuntimeStore? dtcRuntimeStore = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -64,6 +69,9 @@ public static class WebApiApplication
             store.LoadAsync(configPath).GetAwaiter().GetResult(),
             configPath,
             store,
+            eventPublisher);
+        var dtcStore = dtcRuntimeStore ?? new DtcRuntimeStore(
+            store.LoadAsync(configPath).GetAwaiter().GetResult(),
             eventPublisher);
 
         app.UseWebSockets();
@@ -85,6 +93,64 @@ public static class WebApiApplication
         app.MapGet("/api/ecu/state", () => Results.Ok(ToEcuStateSnapshot(ecuState)));
 
         app.MapGet("/api/dids", () => Results.Ok(didStore.List()));
+
+        app.MapGet("/api/dtcs", () => Results.Ok(dtcStore.List()));
+
+        app.MapPost("/api/dtcs/{code}/activate", async (
+            string code,
+            HttpRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            DtcActivateRequest? body = null;
+            if (request.ContentLength is > 0)
+            {
+                try
+                {
+                    body = await request.ReadFromJsonAsync<DtcActivateRequest>(JsonOptions, cancellationToken);
+                }
+                catch (JsonException)
+                {
+                    return Results.BadRequest(new DtcErrorResponse("INVALID_JSON", "Request body must be valid JSON."));
+                }
+            }
+
+            if (!TryParseDtcRouteValue(code, out var dtcCode))
+            {
+                return Results.BadRequest(new DtcErrorResponse("INVALID_DTC", "DTC route value must be a 24-bit hex identifier."));
+            }
+
+            var result = await dtcStore.ActivateAsync(
+                dtcCode,
+                "api",
+                body?.Status,
+                body?.Description,
+                cancellationToken);
+
+            if (!result.Succeeded)
+            {
+                return ToDtcOperationError(result);
+            }
+
+            return Results.Ok(result.Snapshot);
+        });
+
+        app.MapPost("/api/dtcs/{code}/clear", async (
+            string code,
+            CancellationToken cancellationToken) =>
+        {
+            if (!TryParseDtcRouteValue(code, out var dtcCode))
+            {
+                return Results.BadRequest(new DtcErrorResponse("INVALID_DTC", "DTC route value must be a 24-bit hex identifier."));
+            }
+
+            var result = await dtcStore.ClearAsync(dtcCode, "api", cancellationToken);
+            if (!result.Succeeded)
+            {
+                return ToDtcOperationError(result);
+            }
+
+            return Results.Ok(result.Snapshot);
+        });
 
         app.MapPut("/api/dids/{did}/value", async (
             string did,
@@ -303,6 +369,14 @@ public static class WebApiApplication
             out did);
     }
 
+    private static bool TryParseDtcRouteValue(string value, out uint code)
+    {
+        var normalized = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? value
+            : $"0x{value}";
+        return ConfigValidator.TryParseDtcCode(normalized, out code);
+    }
+
     private static IResult ToDidWriteError(DidWriteResult result)
     {
         var response = new DidErrorResponse(result.Failure.ToString(), result.Message ?? "DID write rejected.");
@@ -312,6 +386,16 @@ public static class WebApiApplication
             DidWriteFailure.NotWritable => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
             DidWriteFailure.ConditionsNotCorrect => Results.Json(response, statusCode: StatusCodes.Status409Conflict),
             DidWriteFailure.SecurityAccessDenied => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            _ => Results.BadRequest(response),
+        };
+    }
+
+    private static IResult ToDtcOperationError(DtcOperationResult result)
+    {
+        var response = new DtcErrorResponse(result.Failure.ToString(), result.Message ?? "DTC operation rejected.");
+        return result.Failure switch
+        {
+            DtcOperationFailure.UnknownDtc => Results.NotFound(response),
             _ => Results.BadRequest(response),
         };
     }

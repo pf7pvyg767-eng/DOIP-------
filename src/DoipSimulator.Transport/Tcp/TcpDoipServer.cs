@@ -57,11 +57,14 @@ public sealed class TcpDoipServer : IAsyncDisposable
         var config = SimulatorConfig.CreateDefault();
         config.Uds.Dids = [];
         var didRuntimeStore = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
+        var dtcRuntimeStore = new DtcRuntimeStore(config, eventPublisher);
         return new UdsDispatcher(
             [
                 new DiagnosticSessionControlService(state, eventPublisher),
                 new TesterPresentService(state),
                 new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
+                new ReadDtcInformationService(dtcRuntimeStore),
+                new ClearDiagnosticInformationService(dtcRuntimeStore),
             ],
             eventPublisher);
     }

@@ -35,7 +35,15 @@
         "requiredSecurityState": null
       }
     ],
-    "dtcs": [],
+    "dtcs": [
+      {
+        "code": "0x123456",
+        "name": "Sample DTC",
+        "description": "Injectable sample diagnostic trouble code",
+        "status": "0x2F",
+        "active": false
+      }
+    ],
     "routines": [],
     "sessions": [],
     "securityAccess": [],
