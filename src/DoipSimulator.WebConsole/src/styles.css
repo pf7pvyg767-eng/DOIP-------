@@ -250,6 +250,10 @@ p {
   grid-template-columns: 100px 110px 130px minmax(150px, 1fr) minmax(260px, 1.6fr);
 }
 
+.compact-table--routines .compact-row {
+  grid-template-columns: 120px minmax(180px, 1fr) 110px 110px 110px;
+}
+
 .compact-row--header {
   background: #f8fafc;
   color: #64748b;

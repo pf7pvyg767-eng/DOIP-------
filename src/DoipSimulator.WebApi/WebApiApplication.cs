@@ -52,7 +52,8 @@ public static class WebApiApplication
         ConnectionRegistry? connectionRegistry = null,
         EcuRuntimeState? ecuRuntimeState = null,
         DidRuntimeStore? didRuntimeStore = null,
-        DtcRuntimeStore? dtcRuntimeStore = null)
+        DtcRuntimeStore? dtcRuntimeStore = null,
+        ControlServiceStateStore? controlServiceStateStore = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -71,6 +72,9 @@ public static class WebApiApplication
             store,
             eventPublisher);
         var dtcStore = dtcRuntimeStore ?? new DtcRuntimeStore(
+            store.LoadAsync(configPath).GetAwaiter().GetResult(),
+            eventPublisher);
+        var controlStore = controlServiceStateStore ?? new ControlServiceStateStore(
             store.LoadAsync(configPath).GetAwaiter().GetResult(),
             eventPublisher);
 
@@ -95,6 +99,8 @@ public static class WebApiApplication
         app.MapGet("/api/dids", () => Results.Ok(didStore.List()));
 
         app.MapGet("/api/dtcs", () => Results.Ok(dtcStore.List()));
+
+        app.MapGet("/api/control-services", () => Results.Ok(controlStore.GetSnapshot()));
 
         app.MapPost("/api/dtcs/{code}/activate", async (
             string code,

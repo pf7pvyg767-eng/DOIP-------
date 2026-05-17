@@ -50,7 +50,20 @@ public sealed class SimulatorConfig
                     },
                 ],
                 Dtcs = [],
-                Routines = [],
+                Routines =
+                [
+                    new RoutineConfig
+                    {
+                        Identifier = "0x0201",
+                        Name = "Erase memory preparation",
+                        FixedResponses = new RoutineFixedResponses
+                        {
+                            Start = "0000",
+                            Stop = "0000",
+                            RequestResults = "0001",
+                        },
+                    },
+                ],
                 Sessions = [],
                 SecurityAccess = [],
                 Flash = null,
@@ -152,9 +165,26 @@ public sealed class DtcConfig
 
 public sealed class RoutineConfig
 {
+    public string? RoutineId { get; set; }
+
     public string Identifier { get; set; } = string.Empty;
 
     public string? Name { get; set; }
+
+    public List<string> AllowedSessions { get; set; } = [];
+
+    public string? RequiredSecurityState { get; set; }
+
+    public RoutineFixedResponses FixedResponses { get; set; } = new();
+}
+
+public sealed class RoutineFixedResponses
+{
+    public string? Start { get; set; }
+
+    public string? Stop { get; set; }
+
+    public string? RequestResults { get; set; }
 }
 
 public sealed class SessionConfig

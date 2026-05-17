@@ -1,0 +1,77 @@
+﻿{
+    "task":  "task-017",
+    "status":  "completed",
+    "completed_at":  "2026-05-17T10:13:18.8926070Z",
+    "worktree":  "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\6739ab32\\workdir\\DOIP-------",
+    "branch":  "agent/task-017-control-services",
+    "commands":  [
+                     {
+                         "name":  "openspec validate",
+                         "command":  "openspec validate task-017 --strict",
+                         "result":  "passed",
+                         "exit_code":  0,
+                         "summary":  "Change \u0027task-017\u0027 is valid"
+                     },
+                     {
+                         "name":  "dotnet build",
+                         "command":  "dotnet build .\\DoipSimulator.sln -m:1",
+                         "result":  "passed",
+                         "exit_code":  0,
+                         "summary":  "Build succeeded with 0 errors; only non-blocking NU1900 vulnerability feed warnings were observed."
+                     },
+                     {
+                         "name":  "dotnet test",
+                         "command":  "dotnet test .\\DoipSimulator.sln -m:1",
+                         "result":  "passed",
+                         "exit_code":  0,
+                         "summary":  "152 passed, 0 failed, 0 skipped across Core, DoIP, Transport, and UDS test projects."
+                     },
+                     {
+                         "name":  "npm run build",
+                         "command":  "npm run build",
+                         "working_directory":  "src\\DoipSimulator.WebConsole",
+                         "result":  "passed",
+                         "exit_code":  0,
+                         "summary":  "vue-tsc --noEmit and vite build passed."
+                     },
+                     {
+                         "name":  "git diff --check",
+                         "command":  "git diff --check",
+                         "result":  "passed",
+                         "exit_code":  0,
+                         "summary":  "No whitespace errors; only Windows LF/CRLF normalization warnings."
+                     }
+                 ],
+    "acceptance":  {
+                       "result":  "passed",
+                       "checks":  [
+                                      "0x31 RoutineControl returns configured fixed responses.",
+                                      "Invalid Routine ID returns clear NRC 0x31 requestOutOfRange.",
+                                      "0x28 CommunicationControl changes internal state and publishes runtime event.",
+                                      "0x85 ControlDTCSetting changes internal state and publishes runtime event.",
+                                      "Web/API exposes Routine configuration and CommunicationControl / DTC setting state."
+                                  ]
+                   },
+    "scope":  {
+                  "result":  "passed",
+                  "checks":  [
+                                 "No complex Routine scripts implemented.",
+                                 "No real communication channel shutdown implemented.",
+                                 "No complete DTC setting detailed behavior implemented.",
+                                 "No SecurityAccess complete flow, Flash, ODX/PDX, PCAP/TLS, or other diagnostic flow expansion implemented."
+                             ]
+              },
+    "lint":  {
+                 "result":  "passed",
+                 "command":  "git diff --check",
+                 "note":  "dotnet format was not run because it is optional and non-blocking for this task."
+             },
+    "warnings":  [
+                     "dotnet build/test reported non-blocking NU1900 NuGet vulnerability feed access warnings; implementation verification still passed."
+                 ],
+    "artifacts":  [
+                      "runs/task-017/status.json",
+                      "runs/task-017/test.log"
+                  ],
+    "recommendation":  "task-017 may proceed to push/PR."
+}

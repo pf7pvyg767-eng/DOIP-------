@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { loadDashboardState, type DashboardState } from "../api";
+import ControlServicesPanel from "../components/ControlServicesPanel.vue";
 import DidEditorPanel from "../components/DidEditorPanel.vue";
 import DtcInjectionPanel from "../components/DtcInjectionPanel.vue";
 import EventLogPanel from "../components/EventLogPanel.vue";
@@ -58,6 +59,8 @@ async function load(): Promise<void> {
       <DidEditorPanel />
 
       <DtcInjectionPanel />
+
+      <ControlServicesPanel />
 
       <EventLogPanel />
 

@@ -16,6 +16,9 @@ export interface SimulatorConfig {
     doipTcpPort?: number;
     doipTlsPort?: number;
   };
+  uds?: {
+    routines?: RoutineSummary[];
+  };
 }
 
 export interface ConfigSummary {
@@ -106,6 +109,35 @@ export interface DtcActivateRequest {
   description?: string | null;
 }
 
+export interface RoutineSummary {
+  routineId?: string;
+  identifier?: string;
+  name?: string | null;
+  hasStartResponse?: boolean;
+  hasStopResponse?: boolean;
+  hasRequestResultsResponse?: boolean;
+}
+
+export interface CommunicationControlSummary {
+  controlType: string;
+  communicationType: string;
+  lastChangedAt?: string | null;
+  lastSource?: string | null;
+}
+
+export interface DtcSettingStateSummary {
+  enabled: boolean;
+  settingType: string;
+  lastChangedAt?: string | null;
+  lastSource?: string | null;
+}
+
+export interface ControlServicesSnapshot {
+  routines: RoutineSummary[];
+  communicationControl: CommunicationControlSummary;
+  dtcSetting: DtcSettingStateSummary;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -182,6 +214,10 @@ export async function updateDidValue(did: string, body: DidValueUpdateRequest): 
 
 export async function loadDtcs(): Promise<DtcSummary[]> {
   return getJson<DtcSummary[]>("/api/dtcs");
+}
+
+export async function loadControlServices(): Promise<ControlServicesSnapshot> {
+  return getJson<ControlServicesSnapshot>("/api/control-services");
 }
 
 export async function activateDtc(code: string, body: DtcActivateRequest): Promise<void> {
