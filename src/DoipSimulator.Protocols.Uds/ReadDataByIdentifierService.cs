@@ -1,4 +1,5 @@
 using DoipSimulator.Core.Configuration;
+using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.Protocols.Uds;
@@ -8,13 +9,23 @@ public sealed class ReadDataByIdentifierService : IUdsService
     public const byte Sid = 0x22;
 
     private readonly DidRuntimeStore didRuntimeStore;
+    private readonly EcuRuntimeState? ecuState;
     private readonly IRuntimeEventPublisher eventPublisher;
 
     public ReadDataByIdentifierService(
         DidRuntimeStore didRuntimeStore,
+        IRuntimeEventPublisher? eventPublisher)
+        : this(didRuntimeStore, null, eventPublisher)
+    {
+    }
+
+    public ReadDataByIdentifierService(
+        DidRuntimeStore didRuntimeStore,
+        EcuRuntimeState? ecuState = null,
         IRuntimeEventPublisher? eventPublisher = null)
     {
         this.didRuntimeStore = didRuntimeStore;
+        this.ecuState = ecuState;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
     }
 
@@ -36,6 +47,11 @@ public sealed class ReadDataByIdentifierService : IUdsService
             if (!didRuntimeStore.TryRead(did, out _))
             {
                 return [new NegativeResponse(request.OriginalServiceId, NegativeResponseCode.RequestOutOfRange)];
+            }
+
+            if (!IsSecurityAllowed(did))
+            {
+                return [new NegativeResponse(request.OriginalServiceId, NegativeResponseCode.SecurityAccessDenied)];
             }
         }
 
@@ -93,4 +109,23 @@ public sealed class ReadDataByIdentifierService : IUdsService
     }
 
     private static string FormatDid(ushort did) => $"0x{did:X4}";
+
+    private bool IsSecurityAllowed(ushort did)
+    {
+        if (ecuState is null
+            || !didRuntimeStore.TryGetReadSecurityRequirement(did, out var requiredLevel, out var requiredState))
+        {
+            return true;
+        }
+
+        if (requiredLevel is not null)
+        {
+            return ecuState.IsSecurityLevelUnlocked(requiredLevel.Value);
+        }
+
+        return string.IsNullOrWhiteSpace(requiredState)
+            || (string.Equals(requiredState, "unlocked", StringComparison.OrdinalIgnoreCase)
+                ? ecuState.IsAnySecurityLevelUnlocked()
+                : string.Equals(requiredState, ecuState.SecurityStateSummary, StringComparison.OrdinalIgnoreCase));
+    }
 }

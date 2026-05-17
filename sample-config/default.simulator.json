@@ -58,7 +58,18 @@
       }
     ],
     "sessions": [],
-    "securityAccess": [],
+    "securityAccess": [
+      {
+        "level": 1,
+        "name": "Default built-in level",
+        "seedSubFunction": "0x01",
+        "keySubFunction": "0x02",
+        "algorithm": "builtin-xor",
+        "algorithmParameter": "A5",
+        "maxFailedAttempts": 3,
+        "lockoutMs": 1000
+      }
+    ],
     "flash": null
   },
   "tls": {

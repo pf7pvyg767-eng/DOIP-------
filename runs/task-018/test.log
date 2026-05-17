@@ -1,0 +1,76 @@
+task-018 独立 Test & Status 报告
+生成时间：2026-05-17T23:34:00+08:00
+工作区：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+分支：agent/task-017-control-services
+
+结论：通过。task-018 状态标记为 completed，可进入 push/PR 步骤。
+
+一、核心验证
+
+1. openspec validate task-018 --strict
+结果：通过
+退出码：0
+关键输出：
+Change 'task-018' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+退出码：0
+关键输出：
+已成功生成。
+8 个警告
+0 个错误
+说明：警告均为非阻塞 NU1900，即 NuGet vulnerability feed 访问失败或 SSL 连接失败；未产生编译错误。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+结果：通过
+退出码：0
+测试汇总：
+- DoipSimulator.Core.Tests：55 passed, 0 failed, 0 skipped
+- DoipSimulator.Protocols.Doip.Tests：14 passed, 0 failed, 0 skipped
+- DoipSimulator.Transport.Tests：23 passed, 0 failed, 0 skipped
+- DoipSimulator.Protocols.Uds.Tests：70 passed, 0 failed, 0 skipped
+- 总计：162 passed, 0 failed, 0 skipped
+说明：测试期间同样出现非阻塞 NU1900 vulnerability feed 访问警告，不影响测试结果。
+
+4. git diff --check
+结果：通过
+退出码：0
+说明：未发现 whitespace error；仅有 Windows LF/CRLF normalization warnings。
+
+二、验收检查
+
+1. 请求 seed 返回非空 seed：通过
+证据：SecurityAccessServiceTests.SeedRequestReturnsNonEmptySeedAndCorrectKeyUnlocksLevel 验证响应为 0x67/0x01，且 seed payload 非空。
+
+2. 正确 key 解锁指定安全等级：通过
+证据：SecurityAccessServiceTests.SeedRequestReturnsNonEmptySeedAndCorrectKeyUnlocksLevel 使用 ComputeExpectedKey 后验证 0x67/0x02，并确认 level 1 unlocked；TcpDoipServerTests.SecurityAccessKeyAfterRoutingActivationUnlocksLevel 覆盖 DoIP 转发路径。
+
+3. 错误 key 返回 NRC，并累计失败次数：通过
+证据：SecurityAccessServiceTests.WrongKeyReturnsNrcAndIncrementsFailureCount 验证 NRC 0x35 invalidKey，失败次数递增为 1，且安全等级仍未解锁。
+
+4. 达到失败次数后进入锁定状态：通过
+证据：SecurityAccessServiceTests.MaxFailedAttemptsEnterLockoutAndRejectSeedUntilDelayExpires 验证达到阈值后返回 0x36 exceededNumberOfAttempts，锁定期间 seed 请求返回 0x37 requiredTimeDelayNotExpired，锁定时间过后可重新请求 seed。
+
+5. 解锁状态影响受保护 DID/Routine：通过
+证据：ReadDataByIdentifierServiceTests.ProtectedDidRequiresMatchingUnlockedSecurityLevel 和 RoutineControlServiceTests.ProtectedRoutineRequiresMatchingUnlockedSecurityLevel 覆盖未解锁返回 0x33 securityAccessDenied，解锁后正响应成功。
+
+三、Scope Check
+
+1. 未加载 DLL：通过
+证据：scope grep 未发现 LoadLibrary、NativeLibrary、DllImport、Assembly.Load 等 DLL 加载实现；相关排除项仅存在于 OpenSpec 文档。
+
+2. 未实现 OEM 真实算法：通过
+证据：实现仅支持 builtin-xor / builtin-add 示例算法；OEM 相关命中仅位于 task-018 OpenSpec 排除说明和 Host 启动说明文本。
+
+3. 未实现 0x84 SecuredDataTransmission：通过
+证据：scope grep 未发现 0x84 服务实现；SecuredDataTransmission 命中仅位于 task-018 OpenSpec 排除说明。
+
+4. 未扩大到安全状态持久化、多客户端隔离、复杂密码学、Flash、ODX/PDX、PCAP/TLS 或其他诊断流程：通过
+证据：安全状态保存在 EcuRuntimeState 内存态；scope grep 未发现 task-018 引入 Flash/ODX/PDX/PCAP/TLS 新流程，相关命中为历史配置占位、既有 Web/TLS 文案或 OpenSpec 排除说明。
+
+四、非阻塞可选项
+
+dotnet format：未执行。按当前规则该项仅可作为带明确超时的非阻塞可选检查；formatter 超时、restore 失败或 BuildHost 卡住不得阻塞流水线。本轮核心验收已通过，因此未将 formatter 作为阻塞项。
+
+最终决定：task-018 completed，可进入 push/PR 步骤。
