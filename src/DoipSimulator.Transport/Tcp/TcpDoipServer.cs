@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
+using DoipSimulator.Protocols.Uds;
 
 namespace DoipSimulator.Transport.Tcp;
 
@@ -21,6 +22,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
     private readonly IDoipCodec codec;
     private readonly ConnectionRegistry connectionRegistry;
     private readonly IRuntimeEventPublisher eventPublisher;
+    private readonly IUdsDispatcher udsDispatcher;
     private readonly RoutingActivationHandler routingActivationHandler;
     private readonly AliveCheckHandler aliveCheckHandler;
     private readonly List<Task> connectionTasks = [];
@@ -33,12 +35,14 @@ public sealed class TcpDoipServer : IAsyncDisposable
         TcpDoipServerOptions options,
         IDoipCodec codec,
         ConnectionRegistry connectionRegistry,
-        IRuntimeEventPublisher? eventPublisher = null)
+        IRuntimeEventPublisher? eventPublisher = null,
+        IUdsDispatcher? udsDispatcher = null)
     {
         this.options = options;
         this.codec = codec;
         this.connectionRegistry = connectionRegistry;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
+        this.udsDispatcher = udsDispatcher ?? new UdsDispatcher(eventPublisher: this.eventPublisher);
         routingActivationHandler = new RoutingActivationHandler(codec);
         aliveCheckHandler = new AliveCheckHandler(codec);
     }
@@ -282,7 +286,60 @@ public sealed class TcpDoipServer : IAsyncDisposable
             return;
         }
 
+        if (frame.PayloadType == DoipPayloadType.DiagnosticMessage)
+        {
+            await HandleDiagnosticMessageAsync(connectionId, remoteEndpoint, frame, networkStream, cancellationToken);
+            return;
+        }
+
         await PublishProtocolErrorAsync(connectionId, remoteEndpoint, "UnsupportedTcpPayloadType", cancellationToken);
+    }
+
+    private async ValueTask HandleDiagnosticMessageAsync(
+        string connectionId,
+        string remoteEndpoint,
+        DoipFrame frame,
+        NetworkStream networkStream,
+        CancellationToken cancellationToken)
+    {
+        var connection = connectionRegistry.Get(connectionId);
+        if (connection?.RoutingActivated != true)
+        {
+            await PublishProtocolErrorAsync(connectionId, remoteEndpoint, "RoutingActivationRequired", cancellationToken);
+            return;
+        }
+
+        if (frame.Payload.Length < 4)
+        {
+            await PublishProtocolErrorAsync(connectionId, remoteEndpoint, "InvalidDiagnosticMessageLength", cancellationToken);
+            return;
+        }
+
+        var testerLogicalAddress = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(frame.Payload.AsSpan(0, 2));
+        var ecuLogicalAddress = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(frame.Payload.AsSpan(2, 2));
+        var udsPayload = frame.Payload.AsMemory(4);
+        var context = new UdsContext(
+            connectionId,
+            remoteEndpoint,
+            ConnectionRegistry.FormatLogicalAddress(testerLogicalAddress),
+            ConnectionRegistry.FormatLogicalAddress(ecuLogicalAddress));
+
+        var responses = await udsDispatcher.DispatchAsync(udsPayload, context, cancellationToken);
+        foreach (var response in responses)
+        {
+            var encoded = codec.Encode(DoipFrame.Create(
+                DoipCodec.Iso13400ProtocolVersion,
+                DoipPayloadType.DiagnosticMessage,
+                CreateDiagnosticResponsePayload(ecuLogicalAddress, testerLogicalAddress, response.ToBytes())));
+
+            if (!encoded.IsSuccess || encoded.Value is null)
+            {
+                await PublishProtocolErrorAsync(connectionId, remoteEndpoint, encoded.Error?.Code.ToString() ?? "EncodeFailed", cancellationToken);
+                return;
+            }
+
+            await networkStream.WriteAsync(encoded.Value, cancellationToken);
+        }
     }
 
     private async ValueTask HandleRoutingActivationAsync(
@@ -404,5 +461,17 @@ public sealed class TcpDoipServer : IAsyncDisposable
     public static ushort ParseLogicalAddress(string value)
     {
         return ushort.Parse(value[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+    }
+
+    private static byte[] CreateDiagnosticResponsePayload(
+        ushort sourceAddress,
+        ushort targetAddress,
+        byte[] udsPayload)
+    {
+        var payload = new byte[4 + udsPayload.Length];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(0, 2), sourceAddress);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(2, 2), targetAddress);
+        udsPayload.CopyTo(payload.AsSpan(4));
+        return payload;
     }
 }

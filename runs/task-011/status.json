@@ -1,0 +1,72 @@
+{
+  "task": "task-011",
+  "status": "completed",
+  "verified_at": "2026-05-17T00:00:55.0224622+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "implementation_tree": "C:/Users/hello/multica_workspaces_desktop-api.multica.ai/82820572-6c1f-4353-b094-74ba05c9ec12/4a25195e/workdir/DOIP-------",
+  "base_branch": "agent/task-010-tcp-routing-activation",
+  "commands": [
+    {
+      "command": "openspec validate task-011 --strict",
+      "status": "passed",
+      "summary": "Change 'task-011' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "Build succeeded with 0 errors and 8 NU1900 NuGet vulnerability feed warnings."
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "64 passed, 0 failed, 0 skipped."
+    }
+  ],
+  "lint": {
+    "required": false,
+    "status": "not_run",
+    "summary": "dotnet format is optional and non-blocking only with an explicit timeout; it was not run for this verification."
+  },
+  "frontend": {
+    "changed": false,
+    "npm_required": false,
+    "summary": "No tracked WebConsole diff was detected for task-011; npm build is not required."
+  },
+  "acceptance": [
+    {
+      "criterion": "DoIP diagnostic message payload enters the UDS dispatcher.",
+      "status": "passed",
+      "evidence": "TcpDoipServer.HandleDiagnosticMessageAsync dispatches the UDS payload via IUdsDispatcher; TcpDoipServerTests.DiagnosticMessageAfterRoutingActivationReturnsUnsupportedSidNrc covers the Routing Activation to diagnostic message path."
+    },
+    {
+      "criterion": "Unsupported SID returns 7F xx 11.",
+      "status": "passed",
+      "evidence": "UdsDispatcherTests.UnknownServiceReturnsServiceNotSupported verifies 7F 99 11; TCP integration verifies the same bytes after DoIP diagnostic forwarding."
+    },
+    {
+      "criterion": "Length or format errors can return 0x13.",
+      "status": "passed",
+      "evidence": "UdsDispatcherTests.EmptyPayloadReturnsIncorrectLengthOrInvalidFormat and TCP integration verify 7F 00 13 for empty UDS payload."
+    },
+    {
+      "criterion": "UDS request/response events enter structured logging.",
+      "status": "passed",
+      "evidence": "UdsDispatcher publishes RuntimeEventCategory.Uds events; tests assert uds.request.received, uds.dispatch.unsupported_service, and uds.response.sent."
+    }
+  ],
+  "scope_check": [
+    { "item": "No concrete UDS positive services implemented.", "status": "passed" },
+    { "item": "No ECU state machine details implemented.", "status": "passed" },
+    { "item": "No SecurityAccess behavior implemented.", "status": "passed" },
+    { "item": "No DiagnosticSessionControl, TesterPresent, DID, DTC, Routine, or flashing business service behavior implemented.", "status": "passed" },
+    { "item": "No ResponsePending scheduling, manual NRC controls, or fault injection controls added.", "status": "passed" },
+    { "item": "No new Web UI page or UDS management/editing UI added.", "status": "passed" }
+  ],
+  "warnings": [
+    "dotnet build/test emitted NU1900 warnings because NuGet vulnerability feed data could not be fetched from https://api.nuget.org/v3/index.json; this is non-blocking and did not affect build or test success."
+  ],
+  "decision": "task-011 can proceed to push/PR"
+}
