@@ -185,10 +185,11 @@ namespace DoipSimulator.Host
                 var configStore = new ConfigStore(eventPublisher);
                 var config = await configStore.LoadAsync(configPath, shutdown.Token);
                 var didRuntimeStore = new DidRuntimeStore(config, configPath, configStore, eventPublisher);
+                var dtcRuntimeStore = new DtcRuntimeStore(config, eventPublisher);
                 var connectionRegistry = new ConnectionRegistry();
                 var ecuRuntimeState = new EcuRuntimeState(TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress));
                 await using var udpServer = CreateUdpServer(config, eventPublisher);
-                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore);
+                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
@@ -198,7 +199,8 @@ namespace DoipSimulator.Host
                     runtimeEventHub: eventHub,
                     connectionRegistry: connectionRegistry,
                     ecuRuntimeState: ecuRuntimeState,
-                    didRuntimeStore: didRuntimeStore);
+                    didRuntimeStore: didRuntimeStore,
+                    dtcRuntimeStore: dtcRuntimeStore);
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
@@ -294,7 +296,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, fixed-byte DID reads, and writable fixed-byte DID runtime updates; it does not start SecurityAccess unlock, DTC/Routine, flashing, TLS, PCAP, database, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, fixed-byte DID reads/writes, and DTC 0x19/0x14 MVP services; it does not start SecurityAccess unlock, Routine, flashing, TLS, PCAP, database, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -327,7 +329,8 @@ namespace DoipSimulator.Host
             IRuntimeEventPublisher eventPublisher,
             ConnectionRegistry connectionRegistry,
             EcuRuntimeState ecuRuntimeState,
-            DidRuntimeStore didRuntimeStore)
+            DidRuntimeStore didRuntimeStore,
+            DtcRuntimeStore dtcRuntimeStore)
         {
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
@@ -350,6 +353,8 @@ namespace DoipSimulator.Host
                         new TesterPresentService(ecuRuntimeState),
                         new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
                         new WriteDataByIdentifierService(didRuntimeStore, ecuRuntimeState),
+                        new ReadDtcInformationService(dtcRuntimeStore),
+                        new ClearDiagnosticInformationService(dtcRuntimeStore),
                     ],
                     eventPublisher));
         }

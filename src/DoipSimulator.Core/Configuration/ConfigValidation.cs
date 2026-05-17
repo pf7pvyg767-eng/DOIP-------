@@ -81,6 +81,7 @@ public static partial class ConfigValidator
         }
 
         ValidateDids(config.Uds?.Dids, errors);
+        ValidateDtcs(config.Uds?.Dtcs, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -228,6 +229,77 @@ public static partial class ConfigValidator
     public static bool TryParseDidIdentifier(DidConfig did, out ushort identifier)
     {
         return TryParseUInt16Hex(ResolveDidIdentifier(did), out identifier);
+    }
+
+    public static bool TryParseDtcCode(string? value, out uint code)
+    {
+        code = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? value[2..]
+            : value;
+
+        return normalized.Length == 6
+            && normalized.All(Uri.IsHexDigit)
+            && uint.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out code)
+            && code <= 0xFFFFFF;
+    }
+
+    public static bool TryParseStatusByte(string? value, out byte status)
+    {
+        status = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var normalized = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? value[2..]
+            : value;
+
+        return normalized.Length is > 0 and <= 2
+            && normalized.All(Uri.IsHexDigit)
+            && byte.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out status);
+    }
+
+    private static void ValidateDtcs(List<DtcConfig>? dtcs, List<ConfigValidationError> errors)
+    {
+        if (dtcs is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.dtcs",
+                "DTC configuration list is required."));
+            return;
+        }
+
+        var seenCodes = new HashSet<uint>();
+        for (var index = 0; index < dtcs.Count; index++)
+        {
+            var dtc = dtcs[index];
+            if (!TryParseDtcCode(dtc.Code, out var code))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dtcs[{index}].code",
+                    "DTC code must be a 24-bit hexadecimal value such as 0x123456."));
+            }
+            else if (!seenCodes.Add(code))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dtcs[{index}].code",
+                    "DTC code must be unique."));
+            }
+
+            if (!TryParseStatusByte(dtc.Status, out _))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dtcs[{index}].status",
+                    "DTC status must be a hexadecimal byte such as 0x2F."));
+            }
+        }
     }
 
     private static string? ResolveDidIdentifier(DidConfig did)

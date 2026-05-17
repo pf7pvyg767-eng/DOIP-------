@@ -93,6 +93,19 @@ export interface DidValueUpdateRequest {
   persist: boolean;
 }
 
+export interface DtcSummary {
+  code: string;
+  name?: string | null;
+  description?: string | null;
+  status: string;
+  active: boolean;
+}
+
+export interface DtcActivateRequest {
+  status?: string | null;
+  description?: string | null;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -155,6 +168,42 @@ export async function updateDidValue(did: string, body: DidValueUpdateRequest): 
 
   if (!response.ok) {
     let message = `DID write failed with HTTP ${response.status}.`;
+    try {
+      const error = (await response.json()) as { message?: string };
+      if (error.message) {
+        message = error.message;
+      }
+    } catch {
+    }
+
+    throw new Error(message);
+  }
+}
+
+export async function loadDtcs(): Promise<DtcSummary[]> {
+  return getJson<DtcSummary[]>("/api/dtcs");
+}
+
+export async function activateDtc(code: string, body: DtcActivateRequest): Promise<void> {
+  await postDtcOperation(code, "activate", body);
+}
+
+export async function clearDtc(code: string): Promise<void> {
+  await postDtcOperation(code, "clear");
+}
+
+async function postDtcOperation(code: string, operation: "activate" | "clear", body?: DtcActivateRequest): Promise<void> {
+  const response = await fetch(`/api/dtcs/${encodeURIComponent(code.replace(/^0x/i, ""))}/${operation}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    let message = `DTC ${operation} failed with HTTP ${response.status}.`;
     try {
       const error = (await response.json()) as { message?: string };
       if (error.message) {

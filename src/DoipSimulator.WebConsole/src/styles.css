@@ -323,6 +323,17 @@ p {
   padding: 14px;
 }
 
+.dtc-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(120px, 0.7fr) 100px 92px;
+  gap: 12px;
+  align-items: end;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
 .did-row__meta {
   display: grid;
   min-width: 0;
@@ -446,6 +457,10 @@ p {
   }
 
   .did-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dtc-row {
     grid-template-columns: 1fr;
   }
 }

@@ -1,0 +1,72 @@
+# task-016 Test & Status log
+
+Workdir: C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\4a25195e\workdir\DOIP-------
+Completed: 2026-05-17T09:48:00Z
+Status: completed
+
+## openspec validate task-016 --strict
+Result: passed
+Key output:
+Change 'task-016' is valid
+
+## dotnet build .\DoipSimulator.sln -m:1
+Result: passed
+Summary:
+- Build succeeded.
+- 0 errors.
+- Non-blocking warnings only: NU1900 NuGet vulnerability-feed metadata could not be loaded from https://api.nuget.org/v3/index.json.
+
+## dotnet test .\DoipSimulator.sln -m:1
+Result: passed
+Summary:
+- DoipSimulator.Core.Tests: 53 passed, 0 failed, 0 skipped.
+- DoipSimulator.Protocols.Doip.Tests: 14 passed, 0 failed, 0 skipped.
+- DoipSimulator.Transport.Tests: 21 passed, 0 failed, 0 skipped.
+- DoipSimulator.Protocols.Uds.Tests: 43 passed, 0 failed, 0 skipped.
+- Total: 131 passed, 0 failed, 0 skipped.
+- Non-blocking warnings only: NU1900 NuGet vulnerability-feed metadata could not be loaded.
+
+## npm run build
+Workdir: src\DoipSimulator.WebConsole
+Result: passed after sandbox rerun
+Notes:
+- First sandbox run executed npm and failed during Vite/esbuild startup with `Error: spawn EPERM`.
+- The same command was rerun outside the sandbox and passed.
+Key successful output:
+- vue-tsc --noEmit passed.
+- vite v7.3.3 built production assets.
+- 24 modules transformed.
+- dist/index.html 0.42 kB, gzip 0.29 kB.
+- dist/assets/index-DqJ7DjdY.css 6.05 kB, gzip 1.65 kB.
+- dist/assets/index-BNImOZF0.js 86.94 kB, gzip 31.85 kB.
+- Built in 1.04s.
+
+## git diff --check
+Result: no whitespace errors found
+Notes:
+- Git emitted Windows line-ending warnings such as `LF will be replaced by CRLF the next time Git touches it`.
+- Existing `runs/task-013/status.json`, `runs/task-013/test.log`, and old reply files were not reverted or counted in task-016 verification.
+
+## Acceptance criteria check
+Passed:
+- Web/API activation of DTC is readable through UDS 0x19.
+  Evidence: DtcsApiTests.ApiActivationIsReadableByReadDtcInformation and ReadDtcInformationServiceTests.ReportDtcByStatusMaskReturnsActiveDtc.
+- UDS 0x14 clear is reflected by Web/API and 0x19.
+  Evidence: DtcsApiTests.UdsClearIsReflectedByApiAndReadDtcInformation and ClearDiagnosticInformationServiceTests.ClearConfiguredDtcReturnsPositiveAndUpdatesStore.
+- Unknown DTC operations return clear errors and do not modify the store.
+  Evidence: DtcsApiTests.UnknownDtcOperationReturnsNotFound, DtcRuntimeStoreTests.UnknownDtcReturnsErrorWithoutChangingConfiguredState, and ClearDiagnosticInformationServiceTests.ClearUnknownDtcReturnsRequestOutOfRangeWithoutChangingStore.
+- DTC activation, clear, read, and rejected operations enter the runtime event/log pipeline.
+  Evidence: DtcRuntimeStoreTests.DtcOperationsPublishEventsWithCodeOperationSourceAndStatus and ReadDtcInformationServiceTests.SuccessfulReadPublishesDtcReadEvent.
+
+## Scope check
+Passed:
+- 0x19 remains limited to the MVP subset; unsupported subfunctions return NRC 0x12.
+- No real aging / confirmation / test-failed complete state machine was introduced.
+- No ODX DTC import was introduced.
+- No expansion to SecurityAccess, Routine, Flash, or other diagnostic flows was found.
+- No unrelated refactor was found.
+
+## Optional checks
+- dotnet format was not run because it is a non-blocking optional check for this task and was not required by the triggering request.
+
+Decision: task-016 Test & Status passed; ready for push/PR.

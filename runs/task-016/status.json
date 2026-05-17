@@ -1,0 +1,89 @@
+{
+  "task": "task-016",
+  "status": "completed",
+  "phase": "Test & Status",
+  "completed_at": "2026-05-17T09:48:00Z",
+  "workdir": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\4a25195e\\workdir\\DOIP-------",
+  "commands": [
+    {
+      "command": "openspec validate task-016 --strict",
+      "status": "passed",
+      "summary": "Change 'task-016' is valid."
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "Build succeeded with 0 errors. Only non-blocking NU1900 NuGet vulnerability-feed warnings were reported."
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "131 passed, 0 failed, 0 skipped. Only non-blocking NU1900 NuGet vulnerability-feed warnings were reported."
+    },
+    {
+      "command": "npm run build",
+      "workdir": "src\\DoipSimulator.WebConsole",
+      "status": "passed",
+      "summary": "Initial sandbox run failed with Vite/esbuild spawn EPERM. Rerun outside the sandbox passed."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "No whitespace errors found; Git only emitted Windows line-ending warnings."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "Web/API activation of a DTC is readable through UDS 0x19.",
+      "status": "passed",
+      "evidence": "DtcsApiTests.ApiActivationIsReadableByReadDtcInformation and ReadDtcInformationServiceTests.ReportDtcByStatusMaskReturnsActiveDtc."
+    },
+    {
+      "criterion": "UDS 0x14 clear is reflected by Web/API and 0x19.",
+      "status": "passed",
+      "evidence": "DtcsApiTests.UdsClearIsReflectedByApiAndReadDtcInformation and ClearDiagnosticInformationServiceTests.ClearConfiguredDtcReturnsPositiveAndUpdatesStore."
+    },
+    {
+      "criterion": "Unknown DTC operations return clear errors and do not modify the store.",
+      "status": "passed",
+      "evidence": "DtcsApiTests.UnknownDtcOperationReturnsNotFound, DtcRuntimeStoreTests.UnknownDtcReturnsErrorWithoutChangingConfiguredState, and ClearDiagnosticInformationServiceTests.ClearUnknownDtcReturnsRequestOutOfRangeWithoutChangingStore."
+    },
+    {
+      "criterion": "DTC activation, clear, query, and rejected operations enter the runtime event/log pipeline.",
+      "status": "passed",
+      "evidence": "DtcRuntimeStoreTests.DtcOperationsPublishEventsWithCodeOperationSourceAndStatus and ReadDtcInformationServiceTests.SuccessfulReadPublishesDtcReadEvent."
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "0x19 remains limited to the MVP subset; unsupported subfunctions return NRC 0x12.",
+      "status": "passed"
+    },
+    {
+      "item": "No real aging / confirmation / test-failed complete state machine introduced.",
+      "status": "passed"
+    },
+    {
+      "item": "No ODX DTC import introduced.",
+      "status": "passed"
+    },
+    {
+      "item": "No expansion to SecurityAccess, Routine, Flash, or other diagnostic flows found.",
+      "status": "passed"
+    },
+    {
+      "item": "No unrelated refactor found.",
+      "status": "passed"
+    }
+  ],
+  "notes": [
+    "dotnet format was not run because it is a non-blocking optional check for this task.",
+    "The first npm build attempt in the sandbox failed with Vite/esbuild spawn EPERM. The same command passed outside the sandbox.",
+    "Existing runs/task-013/status.json, runs/task-013/test.log, and old reply files were left untouched and are not counted in task-016 verification."
+  ],
+  "artifacts": [
+    "runs/task-016/status.json",
+    "runs/task-016/test.log"
+  ],
+  "decision": "task-016 Test & Status passed; ready for push/PR."
+}
