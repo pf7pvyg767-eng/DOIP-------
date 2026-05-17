@@ -119,8 +119,9 @@ public class ReadDataByIdentifierServiceTests
 
     private static ReadDataByIdentifierService CreateService(IRuntimeEventPublisher? eventPublisher = null)
     {
-        return new ReadDataByIdentifierService(
-            [
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
                 new DidConfig
                 {
                     Identifier = "0xF190",
@@ -135,7 +136,8 @@ public class ReadDataByIdentifierServiceTests
                     ValueEncoding = "hex",
                     Value = "AABB",
                 },
-            ],
-            eventPublisher);
+        ];
+        var store = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
+        return new ReadDataByIdentifierService(store, eventPublisher);
     }
 }

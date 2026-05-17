@@ -215,6 +215,13 @@ public static partial class ConfigValidator
                     $"uds.dids[{index}].value",
                     "DID fixed value must be an even-length hexadecimal byte string."));
             }
+
+            if (did.WriteLength is < 1)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"uds.dids[{index}].writeLength",
+                    "DID write length must be a positive byte count when configured."));
+            }
         }
     }
 

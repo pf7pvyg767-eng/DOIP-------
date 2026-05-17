@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
+using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
@@ -53,11 +54,14 @@ public sealed class TcpDoipServer : IAsyncDisposable
         IRuntimeEventPublisher eventPublisher)
     {
         var state = new EcuRuntimeState(entityLogicalAddress);
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids = [];
+        var didRuntimeStore = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
         return new UdsDispatcher(
             [
                 new DiagnosticSessionControlService(state, eventPublisher),
                 new TesterPresentService(state),
-                new ReadDataByIdentifierService([], eventPublisher),
+                new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
             ],
             eventPublisher);
     }

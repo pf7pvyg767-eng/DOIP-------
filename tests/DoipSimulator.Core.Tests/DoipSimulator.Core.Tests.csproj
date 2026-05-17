@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DoipSimulator.Core\DoipSimulator.Core.csproj" />
     <ProjectReference Include="..\..\src\DoipSimulator.Host\DoipSimulator.Host.csproj" />
+    <ProjectReference Include="..\..\src\DoipSimulator.Protocols.Uds\DoipSimulator.Protocols.Uds.csproj" />
     <ProjectReference Include="..\..\src\DoipSimulator.WebApi\DoipSimulator.WebApi.csproj" />
   </ItemGroup>
 
