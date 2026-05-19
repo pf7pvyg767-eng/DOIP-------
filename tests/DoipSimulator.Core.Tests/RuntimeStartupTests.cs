@@ -78,25 +78,27 @@ public class RuntimeStartupTests
     [Fact]
     public async Task HostRunWritesStartupAndStopEventsToRuntimeLog()
     {
-        var port = GetFreeLoopbackPort();
+        var port = GetDistinctFreeLoopbackPorts(2);
         var logPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "runtime-events.log");
         var configPath = Path.Combine(Path.GetDirectoryName(logPath)!, "simulator-config.json");
         var config = SimulatorConfig.CreateDefault();
         config.Network.BindAddress = "127.0.0.1";
         config.Network.DoipUdpPort = GetFreeUdpPort();
-        config.Network.DoipTcpPort = GetFreeLoopbackPort();
+        config.Network.DoipTcpPort = port[1];
         await new ConfigStore().SaveAsync(configPath, config);
         using var cancellation = new CancellationTokenSource();
+        using var standardOutput = new StringWriter();
+        using var standardError = new StringWriter();
 
         var runTask = CliEntryPoint.RunAsync(
-            ["run", "--listen-address", "127.0.0.1", "--port", port.ToString(), "--event-log", logPath, "--config", configPath],
-            TextWriter.Null,
-            TextWriter.Null,
+            ["run", "--listen-address", "127.0.0.1", "--port", port[0].ToString(), "--event-log", logPath, "--config", configPath],
+            standardOutput,
+            standardError,
             cancellation.Token);
 
         try
         {
-            await WaitForLogContentAsync(logPath, "runtime.started");
+            await WaitForStartupLogOrExitAsync(logPath, "runtime.started", runTask);
         }
         finally
         {
@@ -106,7 +108,9 @@ public class RuntimeStartupTests
         var exitCode = await runTask;
         var content = await File.ReadAllTextAsync(logPath);
 
-        Assert.Equal(0, exitCode);
+        Assert.True(
+            exitCode == 0,
+            $"Expected exit code 0 but got {exitCode}.{Environment.NewLine}stdout:{Environment.NewLine}{standardOutput}{Environment.NewLine}stderr:{Environment.NewLine}{standardError}");
         Assert.Contains("runtime.started", content);
         Assert.Contains("runtime.stopped", content);
     }
@@ -124,12 +128,28 @@ public class RuntimeStartupTests
         return ((IPEndPoint)udpClient.Client.LocalEndPoint!).Port;
     }
 
-    private static async Task WaitForLogContentAsync(string path, string expected)
+    private static int[] GetDistinctFreeLoopbackPorts(int count)
+    {
+        var ports = new HashSet<int>();
+        while (ports.Count < count)
+        {
+            ports.Add(GetFreeLoopbackPort());
+        }
+
+        return [.. ports];
+    }
+
+    private static async Task WaitForStartupLogOrExitAsync(string path, string expected, Task<int> runTask)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         while (!timeout.IsCancellationRequested)
         {
+            if (runTask.IsCompleted)
+            {
+                break;
+            }
+
             if (File.Exists(path))
             {
                 var content = await File.ReadAllTextAsync(path, timeout.Token);
@@ -142,7 +162,12 @@ public class RuntimeStartupTests
             await Task.Delay(50, timeout.Token);
         }
 
-        throw new TimeoutException($"Timed out waiting for '{expected}' in '{path}'.");
+        if (runTask.IsCompleted)
+        {
+            await runTask;
+        }
+
+        throw new TimeoutException($"Timed out waiting for '{expected}' in '{path}' or runtime exited before startup log was written.");
     }
 
 }
