@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
@@ -193,6 +194,7 @@ namespace DoipSimulator.Host
                 await using var pcapRecorder = new PcapRecorder(eventPublisher: eventPublisher);
                 await using var udpServer = CreateUdpServer(config, eventPublisher, pcapRecorder);
                 await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, pcapRecorder);
+                await using var tlsServer = await CreateTlsServerAsync(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, shutdown.Token);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
@@ -210,6 +212,11 @@ namespace DoipSimulator.Host
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
                 await tcpServer.StartAsync(shutdown.Token);
+                if (tlsServer is not null)
+                {
+                    await tlsServer.StartAsync(shutdown.Token);
+                }
+
                 await eventPublisher.PublishAsync(
                     RuntimeEvent.Create(
                         RuntimeEventLevel.Info,
@@ -222,6 +229,7 @@ namespace DoipSimulator.Host
                             ["port"] = options.Port,
                             ["doipUdpPort"] = udpServer.BoundPort,
                             ["doipTcpPort"] = tcpServer.BoundPort,
+                            ["doipTlsPort"] = tlsServer?.BoundPort,
                             ["startedAt"] = startedAt,
                         }),
                     shutdown.Token);
@@ -301,7 +309,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, Flash download 0x34/0x36/0x37 MVP state, and PCAP recording MVP; it does not start complex Routine scripts, real file flashing, TLS, database, DLL loading, OEM security algorithms, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, optional TLS DoIP transport, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, Flash download 0x34/0x36/0x37 MVP state, and PCAP recording MVP; it does not start complex Routine scripts, real file flashing, certificate generation UI, database, DLL loading, OEM security algorithms, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -377,6 +385,86 @@ namespace DoipSimulator.Host
                     config,
                     ecuRuntimeState),
                 pcapRecorder);
+        }
+
+        private static async Task<TlsDoipServer?> CreateTlsServerAsync(
+            SimulatorConfig config,
+            IRuntimeEventPublisher eventPublisher,
+            ConnectionRegistry connectionRegistry,
+            EcuRuntimeState ecuRuntimeState,
+            DidRuntimeStore didRuntimeStore,
+            DtcRuntimeStore dtcRuntimeStore,
+            ControlServiceStateStore controlServiceStateStore,
+            CancellationToken cancellationToken)
+        {
+            if (!config.Tls.Enabled)
+            {
+                return null;
+            }
+
+            X509Certificate2 serverCertificate;
+            X509Certificate2? clientCa;
+            try
+            {
+                serverCertificate = TlsCertificateLoader.LoadServerCertificate(config.Tls);
+                clientCa = TlsCertificateLoader.LoadClientCertificateAuthority(config.Tls);
+            }
+            catch (TlsCertificateLoadException exception)
+            {
+                await eventPublisher.PublishAsync(
+                    RuntimeEvent.Create(
+                        RuntimeEventLevel.Error,
+                        RuntimeEventCategory.Tls,
+                        "tls.certificate.load_failed",
+                        "TLS certificate loading failed.",
+                        data: new Dictionary<string, object?>
+                        {
+                            ["field"] = exception.Field,
+                            ["reason"] = exception.Message,
+                        }),
+                    cancellationToken);
+                throw;
+            }
+
+            var bindAddress = IPAddress.Parse(config.Network.BindAddress);
+            var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
+            var sourceAddressWhitelist = TcpDoipServer.ParseSourceAddressWhitelist(config.Network.SourceAddressWhitelist);
+            var options = new TlsDoipServerOptions(
+                bindAddress,
+                config.Network.DoipTlsPort,
+                entityLogicalAddress,
+                sourceAddressWhitelist,
+                serverCertificate,
+                new TlsClientCertificateValidator(config.Tls.RequireClientCertificate, clientCa),
+                config.Tls.RequireClientCertificate,
+                TimeSpan.FromMilliseconds(config.Network.TcpConnectionIdleTimeoutMilliseconds));
+
+            return new TlsDoipServer(
+                options,
+                new DoipCodec(),
+                connectionRegistry,
+                eventPublisher,
+                new UdsDispatcher(
+                    [
+                        new DiagnosticSessionControlService(ecuRuntimeState, config, eventPublisher),
+                        new TesterPresentService(
+                            ecuRuntimeState,
+                            timeout: TimeSpan.FromMilliseconds(config.Uds.TesterPresentTimeout.TimeoutMs)),
+                        new SecurityAccessService(config, ecuRuntimeState, eventPublisher),
+                        new RequestDownloadService(ecuRuntimeState, config, eventPublisher),
+                        new TransferDataService(ecuRuntimeState, eventPublisher),
+                        new RequestTransferExitService(ecuRuntimeState, eventPublisher),
+                        new ReadDataByIdentifierService(didRuntimeStore, ecuRuntimeState, eventPublisher),
+                        new WriteDataByIdentifierService(didRuntimeStore, ecuRuntimeState),
+                        new ReadDtcInformationService(dtcRuntimeStore),
+                        new ClearDiagnosticInformationService(dtcRuntimeStore),
+                        new RoutineControlService(config, ecuRuntimeState, eventPublisher),
+                        new CommunicationControlService(controlServiceStateStore),
+                        new ControlDtcSettingService(controlServiceStateStore),
+                    ],
+                    eventPublisher,
+                    config,
+                    ecuRuntimeState));
         }
     }
 

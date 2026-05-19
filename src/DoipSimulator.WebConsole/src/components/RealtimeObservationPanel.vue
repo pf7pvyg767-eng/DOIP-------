@@ -354,6 +354,7 @@ function formatFallbackStatus(state: EcuStateSnapshot | null): string {
         <div v-else class="compact-table compact-table--connections" role="table" aria-label="Connection list">
           <div class="compact-row compact-row--header" role="row">
             <span role="columnheader">ID</span>
+            <span role="columnheader">Transport</span>
             <span role="columnheader">Endpoint</span>
             <span role="columnheader">Routing</span>
             <span role="columnheader">Tester</span>
@@ -362,6 +363,7 @@ function formatFallbackStatus(state: EcuStateSnapshot | null): string {
           </div>
           <div v-for="connection in filteredConnections" :key="connection.connectionId" class="compact-row" role="row">
             <span role="cell">{{ connection.connectionId }}</span>
+            <span role="cell">{{ connection.transport.toUpperCase() }}</span>
             <span role="cell">{{ connection.remoteEndpoint }}</span>
             <span role="cell">{{ connection.routingActivated ? "active" : "pending" }}</span>
             <span role="cell">{{ connection.testerLogicalAddress ?? "Unavailable" }}</span>

@@ -1,0 +1,76 @@
+﻿task-022 独立 Test & Status 记录
+时间：2026-05-19T11:53:00+08:00
+工作目录：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\4a25195e\workdir\DOIP-------
+
+结论：completed
+决定：可进入 push/PR 步骤
+
+命令结果：
+
+1. openspec validate task-022 --strict
+结果：通过
+关键输出：Change 'task-022' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：已成功生成；8 warnings / 0 errors
+说明：warning 为 NU1900 包漏洞数据源访问失败，属于外部数据源访问 warning，不是编译失败。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+沙箱内首次结果：失败
+失败原因：Windows SChannel/PFX 临时证书私钥访问限制，TlsDoipServerTests 在 ReimportForWindowsSchannel 导入测试证书时抛出 System.Security.Cryptography.CryptographicException: 拒绝访问。
+处理：按权限规则在沙箱外重跑同一命令。
+有效结果：通过
+关键输出：
+- DoipSimulator.Core.Tests：69 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Doip.Tests：14 passed / 0 failed / 0 skipped
+- DoipSimulator.Transport.Tests：31 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Uds.Tests：84 passed / 0 failed / 0 skipped
+- 合计：198 passed / 0 failed / 0 skipped
+说明：存在与 build 相同的 NU1900 warning，不影响测试结论。
+
+4. npm run build
+工作目录：src\DoipSimulator.WebConsole
+沙箱内首次结果：失败
+失败原因：Vite/esbuild 启动子进程时 spawn EPERM。
+处理：按权限规则在沙箱外重跑同一命令。
+有效结果：通过
+关键输出：
+- vue-tsc --noEmit && vite build
+- 28 modules transformed
+- dist/index.html 0.42 kB
+- dist/assets/index-_MlGK9oJ.css 6.29 kB
+- dist/assets/index-MJSp4A27.js 92.21 kB
+- built in 750ms
+
+5. git diff --check
+结果：通过
+说明：仅有 Windows LF/CRLF normalization warning，未发现 whitespace error。
+
+Acceptance criteria check：
+
+1. 合法客户端证书可建立 TLS 连接：通过
+证据：TlsDoipServerTests.TrustedClientCertificateCompletesRoutingActivationAndUdsMainPathOverTls 使用受信客户端证书建立 TLS 连接，并断言 tls.handshake.succeeded 与 connection transport=tls。
+
+2. TLS 下可完成 Routing Activation 和 0x10/0x22/0x3E：通过
+证据：同一集成测试在 TLS stream 上完成 routing activation，并依次发送 0x10、0x22、0x3E，验证响应路径复用现有 UDS dispatcher。
+
+3. 非法/缺失证书连接失败且日志/事件包含原因：通过
+证据：MissingRequiredClientCertificateFailsTlsHandshakeAndPublishesReason 覆盖缺失客户端证书失败；不受信客户端证书测试覆盖非法证书失败；TlsDoipServer 发布 tls.handshake.failed，事件 data 包含 reason 且不包含密码。
+
+4. Web UI 能区分 TCP/TLS 连接：通过
+证据：RealtimeObservationApiTests.GetConnectionsDistinguishesTcpAndTlsTransports 验证 API 返回 tcp/tls；RealtimeObservationPanel.vue 增加 Transport 列并显示 connection.transport.toUpperCase()；WebConsole build 通过。
+
+Scope check：
+
+- 未新增证书生成 UI：通过。
+- 未实现 TLS PCAP 解密或 TLS key logging：通过。
+- 未实现 UDS 0x84：通过。
+- 未引入 ODX/PDX：通过。
+- 未引入 SecurityAccess DLL 插件：通过。
+- 未引入异常注入或 simulateCertificateError 产品能力：通过。
+- 未实现 pcapng 高级元数据：通过。
+- 未实现报文索引搜索：通过。
+
+补充说明：
+- 本轮未将 dotnet format 作为阻塞项执行；触发评论要求的核心验证、Web build、git diff check、acceptance criteria 和 scope check 均已完成。

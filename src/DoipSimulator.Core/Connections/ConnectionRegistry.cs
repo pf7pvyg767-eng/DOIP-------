@@ -18,10 +18,20 @@ public sealed class ConnectionRegistry
 
     public ConnectionSnapshot AddTcpConnection(string remoteEndpoint, DateTimeOffset? connectedAt = null)
     {
+        return AddConnection("tcp", remoteEndpoint, connectedAt);
+    }
+
+    public ConnectionSnapshot AddTlsConnection(string remoteEndpoint, DateTimeOffset? connectedAt = null)
+    {
+        return AddConnection("tls", remoteEndpoint, connectedAt);
+    }
+
+    private ConnectionSnapshot AddConnection(string transport, string remoteEndpoint, DateTimeOffset? connectedAt = null)
+    {
         var id = $"conn_{Interlocked.Increment(ref nextConnectionNumber):D6}";
         var snapshot = new ConnectionSnapshot(
             id,
-            "tcp",
+            transport,
             remoteEndpoint,
             RoutingActivated: false,
             TesterLogicalAddress: null,
