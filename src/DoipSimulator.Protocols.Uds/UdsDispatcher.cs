@@ -1,6 +1,7 @@
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Faults;
 using System.Globalization;
 
 namespace DoipSimulator.Protocols.Uds;
@@ -25,13 +26,15 @@ public sealed class UdsDispatcher : IUdsDispatcher
     private readonly EcuRuntimeState? ecuRuntimeState;
     private readonly TesterPresentTimeoutConfig testerPresentTimeout;
     private readonly TimeProvider timeProvider;
+    private readonly FaultRuntimeState? faultRuntimeState;
 
     public UdsDispatcher(
         IEnumerable<IUdsService>? services = null,
         IRuntimeEventPublisher? eventPublisher = null,
         SimulatorConfig? config = null,
         EcuRuntimeState? ecuRuntimeState = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        FaultRuntimeState? faultRuntimeState = null)
     {
         this.services = [];
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
@@ -39,6 +42,7 @@ public sealed class UdsDispatcher : IUdsDispatcher
         this.ecuRuntimeState = ecuRuntimeState;
         testerPresentTimeout = config?.Uds?.TesterPresentTimeout ?? new TesterPresentTimeoutConfig();
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.faultRuntimeState = faultRuntimeState;
 
         foreach (var service in services ?? [])
         {
@@ -71,6 +75,17 @@ public sealed class UdsDispatcher : IUdsDispatcher
         }
 
         await PublishRequestAsync(context, request, cancellationToken);
+
+        var faultOverride = faultRuntimeState?.TryConsumeUdsOverride(request.ServiceId);
+        if (faultOverride is not null)
+        {
+            UdsResponse faultResponse = faultOverride.Nrc is byte nrc
+                ? new NegativeResponse(request.OriginalServiceId, (NegativeResponseCode)nrc)
+                : new RawUdsResponse(faultOverride.CustomResponseBytes ?? []);
+            await PublishFaultOverrideAsync(context, faultOverride, cancellationToken);
+            await PublishResponseAsync(context, faultResponse, cancellationToken);
+            return [faultResponse];
+        }
 
         if (!services.TryGetValue(request.ServiceId, out var service))
         {
@@ -217,6 +232,32 @@ public sealed class UdsDispatcher : IUdsDispatcher
                     ["initialDelayMs"] = delay.InitialDelayMs,
                     ["finalDelayMs"] = delay.FinalDelayMs,
                 })),
+            cancellationToken);
+    }
+
+    private async ValueTask PublishFaultOverrideAsync(
+        UdsContext context,
+        UdsFaultOverride faultOverride,
+        CancellationToken cancellationToken)
+    {
+        var data = CreateEventData(context, new Dictionary<string, object?>
+        {
+            ["faultType"] = faultOverride.Nrc is null ? "customUdsResponse" : "manualNrc",
+            ["serviceId"] = FormatByte(faultOverride.ServiceId),
+            ["nrc"] = faultOverride.Nrc is null ? null : FormatByte(faultOverride.Nrc.Value),
+            ["responseLength"] = faultOverride.CustomResponseBytes?.Length,
+        });
+
+        await eventPublisher.PublishAsync(
+            RuntimeEvent.Create(
+                RuntimeEventLevel.Warning,
+                RuntimeEventCategory.Fault,
+                faultOverride.Nrc is null ? "fault.uds.custom_response.applied" : "fault.uds.nrc.applied",
+                faultOverride.Nrc is null
+                    ? "Custom UDS response fault applied."
+                    : "Manual UDS NRC fault applied.",
+                context.ConnectionId,
+                data),
             cancellationToken);
     }
 

@@ -14,19 +14,30 @@ public sealed class ConnectionRegistry
 {
     private readonly object gate = new();
     private readonly Dictionary<string, ConnectionSnapshot> connections = [];
+    private readonly Dictionary<string, Func<ValueTask>> disconnectActions = [];
     private long nextConnectionNumber;
 
-    public ConnectionSnapshot AddTcpConnection(string remoteEndpoint, DateTimeOffset? connectedAt = null)
+    public ConnectionSnapshot AddTcpConnection(
+        string remoteEndpoint,
+        DateTimeOffset? connectedAt = null,
+        Func<ValueTask>? disconnectAction = null)
     {
-        return AddConnection("tcp", remoteEndpoint, connectedAt);
+        return AddConnection("tcp", remoteEndpoint, connectedAt, disconnectAction);
     }
 
-    public ConnectionSnapshot AddTlsConnection(string remoteEndpoint, DateTimeOffset? connectedAt = null)
+    public ConnectionSnapshot AddTlsConnection(
+        string remoteEndpoint,
+        DateTimeOffset? connectedAt = null,
+        Func<ValueTask>? disconnectAction = null)
     {
-        return AddConnection("tls", remoteEndpoint, connectedAt);
+        return AddConnection("tls", remoteEndpoint, connectedAt, disconnectAction);
     }
 
-    private ConnectionSnapshot AddConnection(string transport, string remoteEndpoint, DateTimeOffset? connectedAt = null)
+    private ConnectionSnapshot AddConnection(
+        string transport,
+        string remoteEndpoint,
+        DateTimeOffset? connectedAt = null,
+        Func<ValueTask>? disconnectAction = null)
     {
         var id = $"conn_{Interlocked.Increment(ref nextConnectionNumber):D6}";
         var snapshot = new ConnectionSnapshot(
@@ -41,6 +52,10 @@ public sealed class ConnectionRegistry
         lock (gate)
         {
             connections[id] = snapshot;
+            if (disconnectAction is not null)
+            {
+                disconnectActions[id] = disconnectAction;
+            }
         }
 
         return snapshot;
@@ -73,8 +88,31 @@ public sealed class ConnectionRegistry
     {
         lock (gate)
         {
+            disconnectActions.Remove(connectionId);
             return connections.Remove(connectionId);
         }
+    }
+
+    public async ValueTask<bool> RequestDisconnectAsync(string connectionId)
+    {
+        Func<ValueTask>? disconnectAction;
+        lock (gate)
+        {
+            if (!connections.ContainsKey(connectionId))
+            {
+                return false;
+            }
+
+            disconnectActions.TryGetValue(connectionId, out disconnectAction);
+        }
+
+        if (disconnectAction is null)
+        {
+            return false;
+        }
+
+        await disconnectAction();
+        return true;
     }
 
     public ConnectionSnapshot? Get(string connectionId)

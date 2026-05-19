@@ -5,6 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Faults;
 using DoipSimulator.Core.Observability.Logging;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
@@ -191,10 +192,11 @@ namespace DoipSimulator.Host
                 var controlServiceStateStore = new ControlServiceStateStore(config, eventPublisher);
                 var connectionRegistry = new ConnectionRegistry();
                 var ecuRuntimeState = new EcuRuntimeState(TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress));
+                var faultRuntimeState = new FaultRuntimeState(config.FaultProfile, eventPublisher);
                 await using var pcapRecorder = new PcapRecorder(eventPublisher: eventPublisher);
                 await using var udpServer = CreateUdpServer(config, eventPublisher, pcapRecorder);
-                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, pcapRecorder);
-                await using var tlsServer = await CreateTlsServerAsync(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, shutdown.Token);
+                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, pcapRecorder, faultRuntimeState);
+                await using var tlsServer = await CreateTlsServerAsync(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, faultRuntimeState, shutdown.Token);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
@@ -207,7 +209,8 @@ namespace DoipSimulator.Host
                     didRuntimeStore: didRuntimeStore,
                     dtcRuntimeStore: dtcRuntimeStore,
                     controlServiceStateStore: controlServiceStateStore,
-                    pcapRecorder: pcapRecorder);
+                    pcapRecorder: pcapRecorder,
+                    faultRuntimeState: faultRuntimeState);
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
@@ -346,7 +349,8 @@ namespace DoipSimulator.Host
             DidRuntimeStore didRuntimeStore,
             DtcRuntimeStore dtcRuntimeStore,
             ControlServiceStateStore controlServiceStateStore,
-            IPcapRecorder pcapRecorder)
+            IPcapRecorder pcapRecorder,
+            FaultRuntimeState faultRuntimeState)
         {
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
@@ -383,8 +387,10 @@ namespace DoipSimulator.Host
                     ],
                     eventPublisher,
                     config,
-                    ecuRuntimeState),
-                pcapRecorder);
+                    ecuRuntimeState,
+                    faultRuntimeState: faultRuntimeState),
+                pcapRecorder,
+                faultRuntimeState);
         }
 
         private static async Task<TlsDoipServer?> CreateTlsServerAsync(
@@ -395,6 +401,7 @@ namespace DoipSimulator.Host
             DidRuntimeStore didRuntimeStore,
             DtcRuntimeStore dtcRuntimeStore,
             ControlServiceStateStore controlServiceStateStore,
+            FaultRuntimeState faultRuntimeState,
             CancellationToken cancellationToken)
         {
             if (!config.Tls.Enabled)
@@ -464,7 +471,8 @@ namespace DoipSimulator.Host
                     ],
                     eventPublisher,
                     config,
-                    ecuRuntimeState));
+                    ecuRuntimeState,
+                    faultRuntimeState: faultRuntimeState));
         }
     }
 

@@ -3,6 +3,7 @@ using System.Text.Json;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Faults;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 
@@ -40,6 +41,12 @@ public sealed record DtcActivateRequest(string? Status, string? Description);
 
 public sealed record DtcErrorResponse(string Code, string Message);
 
+public sealed record FaultDisconnectRequest(string ConnectionId);
+
+public sealed record FaultNextNrcRequest(string ServiceId, string Nrc);
+
+public sealed record FaultErrorResponse(string Code, string Message);
+
 public static class WebApiApplication
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -56,7 +63,8 @@ public static class WebApiApplication
         DidRuntimeStore? didRuntimeStore = null,
         DtcRuntimeStore? dtcRuntimeStore = null,
         ControlServiceStateStore? controlServiceStateStore = null,
-        IPcapRecorder? pcapRecorder = null)
+        IPcapRecorder? pcapRecorder = null,
+        FaultRuntimeState? faultRuntimeState = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -68,17 +76,19 @@ public static class WebApiApplication
         var publisher = configChangePublisher ?? NullConfigChangePublisher.Instance;
         var configPath = ResolveConfigPath(options.ConfigPath);
         var connections = connectionRegistry ?? new ConnectionRegistry();
+        var initialConfig = store.LoadAsync(configPath).GetAwaiter().GetResult();
+        var faults = faultRuntimeState ?? new FaultRuntimeState(initialConfig.FaultProfile, eventPublisher);
         var ecuState = ecuRuntimeState ?? new EcuRuntimeState(0x0E00);
         var didStore = didRuntimeStore ?? new DidRuntimeStore(
-            store.LoadAsync(configPath).GetAwaiter().GetResult(),
+            initialConfig,
             configPath,
             store,
             eventPublisher);
         var dtcStore = dtcRuntimeStore ?? new DtcRuntimeStore(
-            store.LoadAsync(configPath).GetAwaiter().GetResult(),
+            initialConfig,
             eventPublisher);
         var controlStore = controlServiceStateStore ?? new ControlServiceStateStore(
-            store.LoadAsync(configPath).GetAwaiter().GetResult(),
+            initialConfig,
             eventPublisher);
         var pcap = pcapRecorder ?? NullPcapRecorder.Instance;
 
@@ -97,6 +107,104 @@ public static class WebApiApplication
         });
 
         app.MapGet("/api/connections", () => Results.Ok(connections.GetActiveSnapshots()));
+
+        app.MapGet("/api/faults", () => Results.Ok(faults.GetSnapshot()));
+
+        app.MapPut("/api/faults", async (HttpRequest request, CancellationToken cancellationToken) =>
+        {
+            FaultProfile? profile;
+            try
+            {
+                profile = await request.ReadFromJsonAsync<FaultProfile>(JsonOptions, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new FaultErrorResponse("INVALID_JSON", "Request body must be a valid fault profile JSON object."));
+            }
+
+            var errors = new List<ConfigValidationError>();
+            ConfigValidator.ValidateFaultProfile(profile, errors);
+            if (errors.Count > 0)
+            {
+                return Results.BadRequest(ToErrorResponse(errors));
+            }
+
+            return Results.Ok(await faults.UpdateProfileAsync(profile!, "api", cancellationToken));
+        });
+
+        app.MapPost("/api/faults/actions/next-nrc", async (
+            HttpRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            FaultNextNrcRequest? body;
+            try
+            {
+                body = await request.ReadFromJsonAsync<FaultNextNrcRequest>(JsonOptions, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new FaultErrorResponse("INVALID_JSON", "Request body must be valid JSON."));
+            }
+
+            if (body is null)
+            {
+                return Results.BadRequest(new FaultErrorResponse("INVALID_FAULT_ACTION", "next-nrc request body is required."));
+            }
+
+            var current = faults.GetSnapshot().Profile;
+            current.NextNrc = new UdsFaultOverrideConfig
+            {
+                ServiceId = body.ServiceId,
+                Nrc = body.Nrc,
+            };
+
+            var errors = new List<ConfigValidationError>();
+            ConfigValidator.ValidateFaultProfile(current, errors);
+            if (errors.Count > 0)
+            {
+                return Results.BadRequest(ToErrorResponse(errors));
+            }
+
+            return Results.Ok(await faults.UpdateProfileAsync(current, "api.next-nrc", cancellationToken));
+        });
+
+        app.MapPost("/api/faults/actions/disconnect", async (
+            HttpRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            FaultDisconnectRequest? body;
+            try
+            {
+                body = await request.ReadFromJsonAsync<FaultDisconnectRequest>(JsonOptions, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new FaultErrorResponse("INVALID_JSON", "Request body must be valid JSON."));
+            }
+
+            if (body is null || string.IsNullOrWhiteSpace(body.ConnectionId))
+            {
+                return Results.BadRequest(new FaultErrorResponse("INVALID_CONNECTION_ID", "connectionId is required."));
+            }
+
+            var disconnected = await connections.RequestDisconnectAsync(body.ConnectionId);
+            if (!disconnected)
+            {
+                return Results.NotFound(new FaultErrorResponse("CONNECTION_NOT_FOUND", "No active connection matched the requested connectionId."));
+            }
+
+            await faults.PublishFaultEventAsync(
+                "fault.connection.disconnected",
+                "Manual TCP disconnect fault requested.",
+                body.ConnectionId,
+                new Dictionary<string, object?>
+                {
+                    ["connectionId"] = body.ConnectionId,
+                },
+                cancellationToken);
+
+            return Results.Ok(new { body.ConnectionId, disconnected = true });
+        });
 
         app.MapGet("/api/ecu/state", () => Results.Ok(ToEcuStateSnapshot(ecuState, store.LoadAsync(configPath).GetAwaiter().GetResult())));
 
@@ -237,6 +345,7 @@ public static class WebApiApplication
             }
 
             await store.SaveAsync(configPath, config!, cancellationToken);
+            await faults.UpdateProfileAsync(config!.FaultProfile, "api.config", cancellationToken);
             publisher.Publish(new ConfigChangedEvent(DateTimeOffset.UtcNow, configPath));
 
             return Results.Ok(config);

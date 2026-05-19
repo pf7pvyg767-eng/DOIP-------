@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Faults;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
@@ -27,6 +28,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
     private readonly IRuntimeEventPublisher eventPublisher;
     private readonly IUdsDispatcher udsDispatcher;
     private readonly IPcapRecorder pcapRecorder;
+    private readonly FaultRuntimeState faultRuntimeState;
     private readonly RoutingActivationHandler routingActivationHandler;
     private readonly AliveCheckHandler aliveCheckHandler;
     private readonly List<Task> connectionTasks = [];
@@ -41,13 +43,18 @@ public sealed class TcpDoipServer : IAsyncDisposable
         ConnectionRegistry connectionRegistry,
         IRuntimeEventPublisher? eventPublisher = null,
         IUdsDispatcher? udsDispatcher = null,
-        IPcapRecorder? pcapRecorder = null)
+        IPcapRecorder? pcapRecorder = null,
+        FaultRuntimeState? faultRuntimeState = null)
     {
         this.options = options;
         this.codec = codec;
         this.connectionRegistry = connectionRegistry;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
-        this.udsDispatcher = udsDispatcher ?? CreateDefaultUdsDispatcher(options.EntityLogicalAddress, this.eventPublisher);
+        this.faultRuntimeState = faultRuntimeState ?? new FaultRuntimeState(eventPublisher: this.eventPublisher);
+        this.udsDispatcher = udsDispatcher ?? CreateDefaultUdsDispatcher(
+            options.EntityLogicalAddress,
+            this.eventPublisher,
+            this.faultRuntimeState);
         this.pcapRecorder = pcapRecorder ?? NullPcapRecorder.Instance;
         routingActivationHandler = new RoutingActivationHandler(codec);
         aliveCheckHandler = new AliveCheckHandler(codec);
@@ -55,7 +62,8 @@ public sealed class TcpDoipServer : IAsyncDisposable
 
     private static UdsDispatcher CreateDefaultUdsDispatcher(
         ushort entityLogicalAddress,
-        IRuntimeEventPublisher eventPublisher)
+        IRuntimeEventPublisher eventPublisher,
+        FaultRuntimeState faultRuntimeState)
     {
         var state = new EcuRuntimeState(entityLogicalAddress);
         var config = SimulatorConfig.CreateDefault();
@@ -78,7 +86,8 @@ public sealed class TcpDoipServer : IAsyncDisposable
             ],
             eventPublisher,
             config,
-            state);
+            state,
+            faultRuntimeState: faultRuntimeState);
     }
 
     public int BoundPort
@@ -212,7 +221,13 @@ public sealed class TcpDoipServer : IAsyncDisposable
     {
         using var _ = client;
         var remoteEndpoint = client.Client.RemoteEndPoint?.ToString() ?? "unknown";
-        var connection = connectionRegistry.AddTcpConnection(remoteEndpoint);
+        var connection = connectionRegistry.AddTcpConnection(
+            remoteEndpoint,
+            disconnectAction: () =>
+            {
+                client.Close();
+                return ValueTask.CompletedTask;
+            });
         await PublishConnectionEventAsync("doip.tcp.connection.created", "DoIP TCP connection created.", connection, cancellationToken);
 
         var streamReader = new DoipStreamReader(codec);
@@ -331,8 +346,12 @@ public sealed class TcpDoipServer : IAsyncDisposable
                 return;
             }
 
-            await networkStream.WriteAsync(encoded.Value, cancellationToken);
-            await RecordTcpAsync(PcapPacketDirection.Outbound, client, encoded.Value, cancellationToken);
+            var sent = await SendDoipResponseAsync(connectionId, remoteEndpoint, client, networkStream, encoded.Value, cancellationToken);
+            if (!sent)
+            {
+                return;
+            }
+
             await PublishDoipFrameEventAsync(
                 "doip.frame.sent",
                 "DoIP frame sent.",
@@ -418,8 +437,12 @@ public sealed class TcpDoipServer : IAsyncDisposable
                 return;
             }
 
-            await networkStream.WriteAsync(encoded.Value, cancellationToken);
-            await RecordTcpAsync(PcapPacketDirection.Outbound, client, encoded.Value, cancellationToken);
+            var sent = await SendDoipResponseAsync(connectionId, remoteEndpoint, client, networkStream, encoded.Value, cancellationToken);
+            if (!sent)
+            {
+                continue;
+            }
+
             await PublishDoipFrameEventAsync(
                 "doip.frame.sent",
                 "DoIP frame sent.",
@@ -449,7 +472,8 @@ public sealed class TcpDoipServer : IAsyncDisposable
             return;
         }
 
-        var allowed = options.SourceAddressWhitelist.Contains(request.Value.TesterLogicalAddress);
+        var faultFailure = faultRuntimeState.ShouldFailRoutingActivation();
+        var allowed = !faultFailure && options.SourceAddressWhitelist.Contains(request.Value.TesterLogicalAddress);
         var responseCode = allowed
             ? RoutingActivationResponseCode.SuccessfullyActivated
             : RoutingActivationResponseCode.DeniedUnknownSourceAddress;
@@ -472,8 +496,12 @@ public sealed class TcpDoipServer : IAsyncDisposable
                 options.EntityLogicalAddress);
         }
 
-        await networkStream.WriteAsync(encoded.Value, cancellationToken);
-        await RecordTcpAsync(PcapPacketDirection.Outbound, client, encoded.Value, cancellationToken);
+        var sent = await SendDoipResponseAsync(connectionId, remoteEndpoint, client, networkStream, encoded.Value, cancellationToken);
+        if (!sent)
+        {
+            return;
+        }
+
         await PublishDoipFrameEventAsync(
             "doip.frame.sent",
             "DoIP frame sent.",
@@ -498,9 +526,112 @@ public sealed class TcpDoipServer : IAsyncDisposable
                     ["testerLogicalAddress"] = ConnectionRegistry.FormatLogicalAddress(request.Value.TesterLogicalAddress),
                     ["ecuLogicalAddress"] = ConnectionRegistry.FormatLogicalAddress(options.EntityLogicalAddress),
                     ["activationSucceeded"] = allowed,
+                    ["faultInjected"] = faultFailure,
                     ["responseCode"] = $"0x{(byte)responseCode:X2}",
                 }),
             cancellationToken);
+
+        if (faultFailure)
+        {
+            await faultRuntimeState.PublishFaultEventAsync(
+                "fault.routing_activation.failed",
+                "Routing Activation failure fault applied.",
+                connectionId,
+                new Dictionary<string, object?>
+                {
+                    ["connectionId"] = connectionId,
+                    ["remoteEndpoint"] = remoteEndpoint,
+                    ["testerLogicalAddress"] = ConnectionRegistry.FormatLogicalAddress(request.Value.TesterLogicalAddress),
+                    ["responseCode"] = $"0x{(byte)responseCode:X2}",
+                },
+                cancellationToken);
+        }
+    }
+
+    private async ValueTask<bool> SendDoipResponseAsync(
+        string connectionId,
+        string remoteEndpoint,
+        TcpClient client,
+        NetworkStream networkStream,
+        byte[] encoded,
+        CancellationToken cancellationToken)
+    {
+        if (faultRuntimeState.ShouldPauseResponses())
+        {
+            await faultRuntimeState.PublishFaultEventAsync(
+                "fault.response.paused",
+                "Fault profile paused a DoIP response.",
+                connectionId,
+                new Dictionary<string, object?>
+                {
+                    ["connectionId"] = connectionId,
+                    ["remoteEndpoint"] = remoteEndpoint,
+                },
+                cancellationToken);
+            return false;
+        }
+
+        var delayMs = faultRuntimeState.GetResponseDelayMs();
+        if (delayMs > 0)
+        {
+            await faultRuntimeState.PublishFaultEventAsync(
+                "fault.response.delayed",
+                "Fault profile delayed a DoIP response.",
+                connectionId,
+                new Dictionary<string, object?>
+                {
+                    ["connectionId"] = connectionId,
+                    ["remoteEndpoint"] = remoteEndpoint,
+                    ["delayMs"] = delayMs,
+                },
+                cancellationToken);
+            await Task.Delay(delayMs, cancellationToken);
+        }
+
+        var bytesToSend = ApplyDoipHeaderFault(connectionId, remoteEndpoint, encoded, cancellationToken);
+        await networkStream.WriteAsync(bytesToSend, cancellationToken);
+        await RecordTcpAsync(PcapPacketDirection.Outbound, client, bytesToSend, cancellationToken);
+        return true;
+    }
+
+    private byte[] ApplyDoipHeaderFault(
+        string connectionId,
+        string remoteEndpoint,
+        byte[] encoded,
+        CancellationToken cancellationToken)
+    {
+        var fault = faultRuntimeState.TryConsumeDoipHeaderFault();
+        if (fault is null)
+        {
+            return encoded;
+        }
+
+        var corrupted = encoded.ToArray();
+        if (fault.InverseVersion)
+        {
+            corrupted[1] = corrupted[0];
+        }
+
+        if (fault.PayloadLengthDelta != 0)
+        {
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(corrupted.AsSpan(4, 4));
+            var adjusted = Math.Clamp((long)length + fault.PayloadLengthDelta, 0, uint.MaxValue);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(corrupted.AsSpan(4, 4), (uint)adjusted);
+        }
+
+        _ = faultRuntimeState.PublishFaultEventAsync(
+            "fault.doip_header.corrupted",
+            "DoIP response header corruption fault applied.",
+            connectionId,
+            new Dictionary<string, object?>
+            {
+                ["connectionId"] = connectionId,
+                ["remoteEndpoint"] = remoteEndpoint,
+                ["inverseVersion"] = fault.InverseVersion,
+                ["payloadLengthDelta"] = fault.PayloadLengthDelta,
+            },
+            cancellationToken);
+        return corrupted;
     }
 
     private async ValueTask PublishConnectionEventAsync(

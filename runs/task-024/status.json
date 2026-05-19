@@ -1,0 +1,119 @@
+{
+  "task": "task-024",
+  "title": "异常注入第一批",
+  "status": "completed",
+  "verified_at": "2026-05-19T12:53:30+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "baseline": {
+    "apply_run": "36b03b75-c4a4-487b-85bc-c8cacfc5a4fd",
+    "implementation_tree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\6739ab32\\workdir\\DOIP-------",
+    "openspec_change": "openspec/changes/task-024"
+  },
+  "commands": [
+    {
+      "command": "openspec validate task-024 --strict",
+      "status": "passed",
+      "summary": "Change 'task-024' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "0 errors；存在非阻塞 NU1900 包漏洞数据源访问 warning"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed_after_permission_rerun",
+      "summary": "沙箱内首次因 Windows SChannel/PFX 临时证书私钥访问限制导致 2 个既有 TLS 测试失败；沙箱外重跑同一命令通过，222 passed / 0 failed / 0 skipped"
+    },
+    {
+      "command": "npm run build",
+      "status": "passed_after_permission_rerun",
+      "summary": "沙箱内因 esbuild 子进程 spawn EPERM 失败；在 src/DoipSimulator.WebConsole 沙箱外重跑通过"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "无 whitespace error；仅有 Windows LF/CRLF normalization warning"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "开启响应延迟后客户端感知延迟",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultResponseDelayIsObservedByClient"
+    },
+    {
+      "criterion": "暂停响应后客户端超时，恢复后后续请求可响应",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultPauseResponsesCausesClientTimeoutAndResumeRestoresResponses"
+    },
+    {
+      "criterion": "手动断开使目标 TCP 连接关闭",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultManualDisconnectClosesTargetConnection"
+    },
+    {
+      "criterion": "Routing Activation 失败可复现且连接不标记为已激活",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultRoutingActivationFailureIsReproducible"
+    },
+    {
+      "criterion": "下一次指定 service 可被手动 NRC 覆盖",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultNextNrcOverridesOnlyMatchingUdsServiceOnce"
+    },
+    {
+      "criterion": "错误 inverse version / payload length 一次性触发",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultNextDoipHeaderCorruptionAffectsOnlyOneResponse"
+    },
+    {
+      "criterion": "自定义 UDS 响应一次性覆盖",
+      "status": "passed",
+      "evidence": "DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultCustomUdsResponseOverridesMatchingServiceOnce"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "未实现复杂乱序",
+      "status": "passed",
+      "evidence": "仅实现下一次 DoIP header inverse version / payload length 损坏；未发现 packet reordering、frame shuffling 或 multi-frame disorder 编排"
+    },
+    {
+      "item": "未实现概率型策略编排",
+      "status": "passed",
+      "evidence": "FaultProfile 仅包含确定性开关、延迟、暂停、一次性覆盖；未新增 random/probability/weighted rule 调度"
+    },
+    {
+      "item": "未实现所有 TLS 失败组合",
+      "status": "passed",
+      "evidence": "未修改 TLS 故障模拟能力；TLS 相关命中仅为既有 TLS listener/certificate 代码和既有测试"
+    },
+    {
+      "item": "未实现长期故障脚本系统",
+      "status": "passed",
+      "evidence": "未新增脚本语言执行、持久脚本文件或 scenario orchestration engine"
+    },
+    {
+      "item": "未新增 ODX/PDX 或其他越界能力",
+      "status": "passed",
+      "evidence": "变更集中在 FaultProfile、FaultRuntimeState、WebApi/WebConsole 控制、TCP/UDS 响应边界和对应测试"
+    }
+  ],
+  "permission_notes": [
+    {
+      "area": "dotnet test",
+      "classification": "Windows sandbox permission issue",
+      "detail": "沙箱内 TLS 测试导入 PFX 时出现 CryptographicException: 拒绝访问；沙箱外同一命令通过，判定非业务失败"
+    },
+    {
+      "area": "npm run build",
+      "classification": "Windows sandbox permission issue",
+      "detail": "沙箱内 Vite/esbuild 加载配置时 spawn EPERM；沙箱外同一命令通过，判定非业务失败"
+    }
+  ],
+  "decision": "task-024 completed，可进入 push/PR 步骤"
+}

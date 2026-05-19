@@ -1,0 +1,110 @@
+task-024 独立 Test & Status 日志
+================================
+
+任务：task-024，异常注入第一批
+验证时间：2026-05-19T12:53:30+08:00
+验证智能体：测试与状态智能体（71cd944c-68d0-4621-a9d1-e2bc3716bf1b）
+实现树：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+Apply run：36b03b75-c4a4-487b-85bc-c8cacfc5a4fd
+
+命令结果
+--------
+
+1. openspec validate task-024 --strict
+结果：通过
+关键输出：Change 'task-024' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+摘要：已成功生成；0 errors。
+备注：出现非阻塞 warning NU1900，内容为无法加载 nuget.org 包漏洞数据源服务索引或 SSL 连接失败；不影响编译结果。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+首次沙箱内结果：失败，原因是 Windows SChannel/PFX 临时证书私钥访问限制。
+失败特征：
+- DoipSimulator.Transport.Tests.TlsDoipServerTests.MissingRequiredClientCertificateFailsTlsHandshakeAndPublishesReason
+- DoipSimulator.Transport.Tests.TlsDoipServerTests.TrustedClientCertificateCompletesRoutingActivationAndUdsMainPathOverTls
+- System.Security.Cryptography.CryptographicException: 拒绝访问。
+- 失败位置为测试证书 ReimportForWindowsSchannel 导入 PFX。
+
+按权限规则在沙箱外重跑同一命令。
+沙箱外结果：通过
+测试汇总：
+- DoipSimulator.Core.Tests：79 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Doip.Tests：14 passed / 0 failed / 0 skipped
+- DoipSimulator.Transport.Tests：38 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Uds.Tests：91 passed / 0 failed / 0 skipped
+- 合计：222 passed / 0 failed / 0 skipped
+
+结论：首次失败为 Windows 沙箱权限问题，不是 task-024 业务失败。
+
+4. npm run build
+执行目录：src\DoipSimulator.WebConsole
+首次沙箱内结果：失败，原因是 esbuild 子进程 spawn EPERM。
+失败特征：
+- failed to load config from vite.config.ts
+- Error: spawn EPERM
+
+按权限规则在沙箱外重跑同一命令。
+沙箱外结果：通过
+关键输出：
+- vue-tsc --noEmit 通过
+- vite build 通过
+- 30 modules transformed
+- dist/index.html 0.42 kB
+- dist/assets/index-Ce-sXNiY.css 7.06 kB
+- dist/assets/index-DFjYuEZU.js 98.51 kB
+
+结论：首次失败为 Windows 沙箱权限问题，不是 WebConsole 业务失败。
+
+5. git diff --check
+结果：通过
+备注：无 whitespace error；仅有 Windows LF/CRLF normalization warning。
+
+验收映射
+--------
+
+1. 开启响应延迟后客户端感知延迟：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultResponseDelayIsObservedByClient。
+
+2. 暂停响应后客户端超时，恢复后后续请求可响应：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultPauseResponsesCausesClientTimeoutAndResumeRestoresResponses。
+
+3. 手动断开使目标 TCP 连接关闭：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultManualDisconnectClosesTargetConnection。
+
+4. Routing Activation 失败可复现且连接不标记为已激活：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultRoutingActivationFailureIsReproducible。
+
+5. 下一次指定 service 可被手动 NRC 覆盖：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultNextNrcOverridesOnlyMatchingUdsServiceOnce。
+
+6. 错误 inverse version / payload length 一次性触发：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultNextDoipHeaderCorruptionAffectsOnlyOneResponse。
+
+7. 自定义 UDS 响应一次性覆盖：通过。
+证据：DoipSimulator.Transport.Tests.TcpDoipServerTests.FaultCustomUdsResponseOverridesMatchingServiceOnce。
+
+Scope check
+-----------
+
+1. 未实现复杂乱序：通过。
+证据：仅实现下一次 DoIP header inverse version / payload length 损坏；未发现 packet reordering、frame shuffling 或 multi-frame disorder 编排。
+
+2. 未实现概率型策略编排：通过。
+证据：FaultProfile 仅包含确定性开关、延迟、暂停、一次性覆盖；未新增 random/probability/weighted rule 调度。
+
+3. 未实现所有 TLS 失败组合：通过。
+证据：未修改 TLS 故障模拟能力；TLS 相关命中仅为既有 TLS listener/certificate 代码和既有测试。
+
+4. 未实现长期故障脚本系统：通过。
+证据：未新增脚本语言执行、持久脚本文件或 scenario orchestration engine。
+
+5. 未新增 ODX/PDX 或其他越界能力：通过。
+证据：变更集中在 FaultProfile、FaultRuntimeState、WebApi/WebConsole 控制、TCP/UDS 响应边界和对应测试。
+
+最终结论
+--------
+
+task-024 独立 Test & Status 通过，状态：completed。
+可进入 push/PR 步骤。
