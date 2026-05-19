@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
 using DoipSimulator.Protocols.Uds;
@@ -25,6 +26,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
     private readonly ConnectionRegistry connectionRegistry;
     private readonly IRuntimeEventPublisher eventPublisher;
     private readonly IUdsDispatcher udsDispatcher;
+    private readonly IPcapRecorder pcapRecorder;
     private readonly RoutingActivationHandler routingActivationHandler;
     private readonly AliveCheckHandler aliveCheckHandler;
     private readonly List<Task> connectionTasks = [];
@@ -38,13 +40,15 @@ public sealed class TcpDoipServer : IAsyncDisposable
         IDoipCodec codec,
         ConnectionRegistry connectionRegistry,
         IRuntimeEventPublisher? eventPublisher = null,
-        IUdsDispatcher? udsDispatcher = null)
+        IUdsDispatcher? udsDispatcher = null,
+        IPcapRecorder? pcapRecorder = null)
     {
         this.options = options;
         this.codec = codec;
         this.connectionRegistry = connectionRegistry;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
         this.udsDispatcher = udsDispatcher ?? CreateDefaultUdsDispatcher(options.EntityLogicalAddress, this.eventPublisher);
+        this.pcapRecorder = pcapRecorder ?? NullPcapRecorder.Instance;
         routingActivationHandler = new RoutingActivationHandler(codec);
         aliveCheckHandler = new AliveCheckHandler(codec);
     }
@@ -228,6 +232,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
                     break;
                 }
 
+                await RecordTcpAsync(PcapPacketDirection.Inbound, client, buffer.AsMemory(0, bytesRead), linked.Token);
                 idleTimeout.CancelAfter(options.IdleTimeout ?? DefaultIdleTimeout);
                 var readResult = streamReader.Append(buffer.AsSpan(0, bytesRead));
                 foreach (var error in readResult.Errors)
@@ -245,7 +250,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
                         frame,
                         "received",
                         cancellationToken);
-                    await HandleFrameAsync(connection.ConnectionId, remoteEndpoint, frame, networkStream, cancellationToken);
+                    await HandleFrameAsync(connection.ConnectionId, remoteEndpoint, frame, client, networkStream, cancellationToken);
                 }
             }
 
@@ -307,12 +312,13 @@ public sealed class TcpDoipServer : IAsyncDisposable
         string connectionId,
         string remoteEndpoint,
         DoipFrame frame,
+        TcpClient client,
         NetworkStream networkStream,
         CancellationToken cancellationToken)
     {
         if (frame.PayloadType == DoipPayloadType.RoutingActivationRequest)
         {
-            await HandleRoutingActivationAsync(connectionId, remoteEndpoint, frame, networkStream, cancellationToken);
+            await HandleRoutingActivationAsync(connectionId, remoteEndpoint, frame, client, networkStream, cancellationToken);
             return;
         }
 
@@ -326,6 +332,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
             }
 
             await networkStream.WriteAsync(encoded.Value, cancellationToken);
+            await RecordTcpAsync(PcapPacketDirection.Outbound, client, encoded.Value, cancellationToken);
             await PublishDoipFrameEventAsync(
                 "doip.frame.sent",
                 "DoIP frame sent.",
@@ -355,7 +362,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
 
         if (frame.PayloadType == DoipPayloadType.DiagnosticMessage)
         {
-            await HandleDiagnosticMessageAsync(connectionId, remoteEndpoint, frame, networkStream, cancellationToken);
+            await HandleDiagnosticMessageAsync(connectionId, remoteEndpoint, frame, client, networkStream, cancellationToken);
             return;
         }
 
@@ -366,6 +373,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
         string connectionId,
         string remoteEndpoint,
         DoipFrame frame,
+        TcpClient client,
         NetworkStream networkStream,
         CancellationToken cancellationToken)
     {
@@ -411,6 +419,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
             }
 
             await networkStream.WriteAsync(encoded.Value, cancellationToken);
+            await RecordTcpAsync(PcapPacketDirection.Outbound, client, encoded.Value, cancellationToken);
             await PublishDoipFrameEventAsync(
                 "doip.frame.sent",
                 "DoIP frame sent.",
@@ -429,6 +438,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
         string connectionId,
         string remoteEndpoint,
         DoipFrame frame,
+        TcpClient client,
         NetworkStream networkStream,
         CancellationToken cancellationToken)
     {
@@ -463,6 +473,7 @@ public sealed class TcpDoipServer : IAsyncDisposable
         }
 
         await networkStream.WriteAsync(encoded.Value, cancellationToken);
+        await RecordTcpAsync(PcapPacketDirection.Outbound, client, encoded.Value, cancellationToken);
         await PublishDoipFrameEventAsync(
             "doip.frame.sent",
             "DoIP frame sent.",
@@ -629,5 +640,28 @@ public sealed class TcpDoipServer : IAsyncDisposable
     private static string ToHex(ReadOnlySpan<byte> bytes)
     {
         return string.Join(' ', bytes.ToArray().Select(value => value.ToString("X2", CultureInfo.InvariantCulture)));
+    }
+
+    private async ValueTask RecordTcpAsync(
+        PcapPacketDirection direction,
+        TcpClient client,
+        ReadOnlyMemory<byte> payload,
+        CancellationToken cancellationToken)
+    {
+        if (client.Client.LocalEndPoint is not IPEndPoint localEndpoint ||
+            client.Client.RemoteEndPoint is not IPEndPoint remoteEndpoint)
+        {
+            return;
+        }
+
+        await pcapRecorder.RecordAsync(
+            new PcapPacket(
+                PcapTransport.Tcp,
+                direction,
+                localEndpoint,
+                remoteEndpoint,
+                payload.ToArray(),
+                DateTimeOffset.UtcNow),
+            cancellationToken);
     }
 }

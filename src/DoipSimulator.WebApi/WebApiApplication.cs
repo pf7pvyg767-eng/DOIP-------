@@ -3,6 +3,7 @@ using System.Text.Json;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 
 namespace DoipSimulator.WebApi;
@@ -54,7 +55,8 @@ public static class WebApiApplication
         EcuRuntimeState? ecuRuntimeState = null,
         DidRuntimeStore? didRuntimeStore = null,
         DtcRuntimeStore? dtcRuntimeStore = null,
-        ControlServiceStateStore? controlServiceStateStore = null)
+        ControlServiceStateStore? controlServiceStateStore = null,
+        IPcapRecorder? pcapRecorder = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -78,6 +80,7 @@ public static class WebApiApplication
         var controlStore = controlServiceStateStore ?? new ControlServiceStateStore(
             store.LoadAsync(configPath).GetAwaiter().GetResult(),
             eventPublisher);
+        var pcap = pcapRecorder ?? NullPcapRecorder.Instance;
 
         app.UseWebSockets();
 
@@ -102,6 +105,14 @@ public static class WebApiApplication
         app.MapGet("/api/dtcs", () => Results.Ok(dtcStore.List()));
 
         app.MapGet("/api/control-services", () => Results.Ok(controlStore.GetSnapshot()));
+
+        app.MapGet("/api/pcap/status", () => Results.Ok(pcap.GetStatus()));
+
+        app.MapPost("/api/pcap/start", async (CancellationToken cancellationToken) =>
+            Results.Ok(await pcap.StartAsync(cancellationToken)));
+
+        app.MapPost("/api/pcap/stop", async (CancellationToken cancellationToken) =>
+            Results.Ok(await pcap.StopAsync(cancellationToken)));
 
         app.MapPost("/api/dtcs/{code}/activate", async (
             string code,

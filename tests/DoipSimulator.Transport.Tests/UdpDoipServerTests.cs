@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
 using DoipSimulator.Transport.Udp;
@@ -73,11 +74,35 @@ public class UdpDoipServerTests
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.udp.vehicle_announcement.sent");
     }
 
+    [Fact]
+    public async Task ActivePcapRecorderCapturesUdpDiscoveryTraffic()
+    {
+        var codec = new DoipCodec();
+        await using var recorder = new PcapRecorder(CreateTempDirectory());
+        var started = await recorder.StartAsync();
+        await using var server = CreateServer(codec, announcementTarget: null, pcapRecorder: recorder);
+        await server.StartAsync();
+
+        using var client = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var request = CreateRequest(codec, DoipPayloadType.VehicleIdentificationRequest, []);
+        await client.SendAsync(request, new IPEndPoint(IPAddress.Loopback, server.BoundPort));
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await client.ReceiveAsync(timeout.Token);
+        var stopped = await recorder.StopAsync();
+
+        Assert.False(stopped.Recording);
+        Assert.NotNull(started.FilePath);
+        Assert.True(File.Exists(started.FilePath));
+        Assert.True(new FileInfo(started.FilePath!).Length > PcapWriter.GlobalHeaderLength);
+    }
+
     private static UdpDoipServer CreateServer(
         DoipCodec codec,
         IPEndPoint? announcementTarget,
         bool announcementEnabled = false,
-        IRuntimeEventPublisher? eventPublisher = null)
+        IRuntimeEventPublisher? eventPublisher = null,
+        IPcapRecorder? pcapRecorder = null)
     {
         var handler = new VehicleIdentificationUdpHandler(Entity, codec, eventPublisher);
         return new UdpDoipServer(
@@ -87,7 +112,8 @@ public class UdpDoipServerTests
                 announcementEnabled,
                 TimeSpan.FromMilliseconds(100),
                 announcementTarget),
-            handler);
+            handler,
+            pcapRecorder);
     }
 
     private static byte[] CreateRequest(DoipCodec codec, DoipPayloadType payloadType, byte[] payload)
@@ -95,5 +121,12 @@ public class UdpDoipServerTests
         var encoded = codec.Encode(DoipFrame.Create(DoipCodec.Iso13400ProtocolVersion, payloadType, payload));
         Assert.True(encoded.IsSuccess);
         return encoded.Value!;
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        return directory;
     }
 }

@@ -1,0 +1,93 @@
+{
+  "task": "task-021",
+  "status": "completed",
+  "completed_at": "2026-05-19T11:05:33.3524709+08:00",
+  "summary": "PCAP 录制 MVP 独立 Test & Status 通过，可进入 push/PR 步骤。",
+  "commands": [
+    {
+      "command": "openspec validate task-021 --strict",
+      "result": "passed",
+      "notes": "Change 'task-021' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "result": "passed",
+      "notes": "0 errors；存在非阻塞 NU1900 包漏洞数据源访问 warning。"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "result": "passed",
+      "notes": "188 passed / 0 failed / 0 skipped"
+    },
+    {
+      "command": "npm run build",
+      "working_directory": "src\\DoipSimulator.WebConsole",
+      "result": "passed",
+      "notes": "沙箱内首次因 Vite/esbuild spawn EPERM 失败；按权限规则在沙箱外重跑通过。"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed",
+      "notes": "仅有 Windows LF/CRLF normalization warning。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "开启录制后生成 pcap 文件。",
+      "result": "passed",
+      "evidence": "PcapRecorder.StartAsync 创建 session-<timestamp>.pcap；PcapRecorderLifecyclePublishesStartStopAndKeepsStatus 覆盖。"
+    },
+    {
+      "criterion": "执行 UDP discovery 和 TCP UDS 请求后，pcap 文件非空且包含 packet record。",
+      "result": "passed",
+      "evidence": "ActivePcapRecorderCapturesUdpDiscoveryTraffic 与 ActivePcapRecorderCapturesTcpUdsTraffic 验证文件长度大于 global header。"
+    },
+    {
+      "criterion": "生成文件可被 Wireshark 打开，或通过等价 pcap header / packet parser 自动化验证并记录说明。",
+      "result": "passed",
+      "evidence": "PcapWriterCreatesReadableGlobalHeaderAndPacketRecord 验证 pcap global header、packet header、captured/original length 和非空 payload。"
+    },
+    {
+      "criterion": "达到大小上限后停止录制或按 proposal 规定处理，并产生 runtime event。",
+      "result": "passed",
+      "evidence": "PcapRecorderStopsAndPublishesEventWhenSizeLimitWouldBeExceeded 验证停止录制并发布 pcap.recording.size_limit_reached。"
+    },
+    {
+      "criterion": "start / stop / status API 返回包含 recording、filePath、bytesWritten、maxBytes 的状态契约。",
+      "result": "passed",
+      "evidence": "WebApi 映射 /api/pcap/status、/api/pcap/start、/api/pcap/stop；PcapApiReturnsStatusContractAndControlsLifecycle 覆盖状态契约。"
+    },
+    {
+      "criterion": "WebConsole 能显示并刷新录制状态，不增加排除范围内的高级功能。",
+      "result": "passed",
+      "evidence": "PcapRecordingPanel 显示 recording、filePath、bytesWritten、maxBytes，5 秒刷新并仅提供 start/stop 操作；npm run build 通过。"
+    }
+  ],
+  "scope_check": [
+    {
+      "criterion": "未实现 TLS 内容解密、TLS key logging 或 TLS 传输新能力。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未实现 pcapng 高级元数据。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未实现报文索引搜索、pcap 下载、报文回放或图表分析。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未引入 ODX/PDX、SecurityAccess 插件、异常注入或新的诊断业务能力。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未改变 UDS 服务语义；DoIP/TCP/UDP 主流程只被旁路观察。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未做无关重构。",
+      "result": "passed"
+    }
+  ],
+  "decision": "可进入 push/PR 步骤"
+}

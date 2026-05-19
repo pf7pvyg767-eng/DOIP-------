@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using DoipSimulator.Core.Observability.Pcap;
 
 namespace DoipSimulator.Transport.Udp;
 
@@ -14,16 +15,18 @@ public sealed class UdpDoipServer : IAsyncDisposable
 {
     private readonly UdpDoipServerOptions options;
     private readonly IDoipUdpHandler handler;
+    private readonly IPcapRecorder pcapRecorder;
     private readonly VehicleIdentificationUdpHandler? announcementHandler;
     private CancellationTokenSource? shutdown;
     private UdpClient? udpClient;
     private Task? receiveTask;
     private Task? announcementTask;
 
-    public UdpDoipServer(UdpDoipServerOptions options, IDoipUdpHandler handler)
+    public UdpDoipServer(UdpDoipServerOptions options, IDoipUdpHandler handler, IPcapRecorder? pcapRecorder = null)
     {
         this.options = options;
         this.handler = handler;
+        this.pcapRecorder = pcapRecorder ?? NullPcapRecorder.Instance;
         announcementHandler = handler as VehicleIdentificationUdpHandler;
     }
 
@@ -124,6 +127,9 @@ public sealed class UdpDoipServer : IAsyncDisposable
                 return;
             }
 
+            var localEndpoint = udpClient.Client.LocalEndPoint as IPEndPoint ?? new IPEndPoint(options.BindAddress, BoundPort);
+            await RecordUdpAsync(PcapPacketDirection.Inbound, localEndpoint, result.RemoteEndPoint, result.Buffer, cancellationToken);
+
             var outbound = await handler.HandleAsync(
                 new InboundDatagram(result.Buffer, result.RemoteEndPoint),
                 cancellationToken);
@@ -131,6 +137,7 @@ public sealed class UdpDoipServer : IAsyncDisposable
             foreach (var datagram in outbound)
             {
                 await udpClient.SendAsync(datagram.Payload, datagram.TargetEndpoint, cancellationToken);
+                await RecordUdpAsync(PcapPacketDirection.Outbound, localEndpoint, datagram.TargetEndpoint, datagram.Payload, cancellationToken);
             }
         }
     }
@@ -144,8 +151,28 @@ public sealed class UdpDoipServer : IAsyncDisposable
         {
             var payload = announcementHandler.CreateAnnouncementDatagram();
             await udpClient.SendAsync(payload, target, cancellationToken);
+            var localEndpoint = udpClient.Client.LocalEndPoint as IPEndPoint ?? new IPEndPoint(options.BindAddress, BoundPort);
+            await RecordUdpAsync(PcapPacketDirection.Outbound, localEndpoint, target, payload, cancellationToken);
             await announcementHandler.PublishAnnouncementAsync(target, cancellationToken);
             await Task.Delay(interval, cancellationToken);
         }
+    }
+
+    private async ValueTask RecordUdpAsync(
+        PcapPacketDirection direction,
+        IPEndPoint localEndpoint,
+        IPEndPoint remoteEndpoint,
+        byte[] payload,
+        CancellationToken cancellationToken)
+    {
+        await pcapRecorder.RecordAsync(
+            new PcapPacket(
+                PcapTransport.Udp,
+                direction,
+                localEndpoint,
+                remoteEndpoint,
+                payload.ToArray(),
+                DateTimeOffset.UtcNow),
+            cancellationToken);
     }
 }

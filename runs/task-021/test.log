@@ -1,0 +1,75 @@
+task-021 独立 Test & Status 记录
+时间：2026-05-19T11:05:33.3524709+08:00
+工作目录：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------\
+
+结论：completed
+决定：可进入 push/PR 步骤
+
+命令结果：
+
+1. openspec validate task-021 --strict
+结果：通过
+关键输出：Change 'task-021' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：已成功生成；8 个 warning，0 个 error
+说明：warning 为 NU1900 包漏洞数据源访问失败，属于网络/数据源 warning，不是编译失败。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+结果：通过
+关键输出：
+- DoipSimulator.Core.Tests：61 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Doip.Tests：14 passed / 0 failed / 0 skipped
+- DoipSimulator.Transport.Tests：29 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Uds.Tests：84 passed / 0 failed / 0 skipped
+- 合计：188 passed / 0 failed / 0 skipped
+说明：存在与 build 相同的 NU1900 包漏洞数据源访问 warning，不影响测试结论。
+
+4. npm run build
+工作目录：src\DoipSimulator.WebConsole
+结果：通过
+说明：首次沙箱内运行失败：Vite/esbuild spawn EPERM。按权限规则在沙箱外重跑同一命令后通过。
+关键输出：
+- vue-tsc --noEmit && vite build
+- 28 modules transformed
+- dist/index.html 0.42 kB
+- dist/assets/index-CoZFFzM1.css 6.29 kB
+- dist/assets/index-Dg2Whuwf.js 92.11 kB
+- built in 975ms
+
+5. git diff --check
+结果：通过
+说明：仅有 Windows LF/CRLF normalization warning，未发现 whitespace error。
+
+Acceptance criteria check：
+
+1. 开启录制后生成 pcap 文件：通过
+证据：PcapRecorder.StartAsync 创建 session-<timestamp>.pcap；PcapRecorderLifecyclePublishesStartStopAndKeepsStatus 覆盖生命周期。
+
+2. 执行 UDP discovery 和 TCP UDS 请求后，pcap 文件非空且包含 packet record：通过
+证据：ActivePcapRecorderCapturesUdpDiscoveryTraffic 与 ActivePcapRecorderCapturesTcpUdsTraffic 验证文件长度大于 PcapWriter.GlobalHeaderLength。
+
+3. 生成文件可被 Wireshark 打开，或通过等价 pcap header / packet parser 自动化验证并记录说明：通过
+证据：PcapWriterCreatesReadableGlobalHeaderAndPacketRecord 验证 global header、packet record header、captured length、original length 与非空 payload；该自动化 parser/header 检查作为 Wireshark 等价验证。
+
+4. 达到大小上限后停止录制或按 proposal 规定处理，并产生 runtime event：通过
+证据：PcapRecorderStopsAndPublishesEventWhenSizeLimitWouldBeExceeded 验证超过 maxBytes 时不追加 packet、状态 recording=false，并发布 pcap.recording.size_limit_reached。
+
+5. start / stop / status API 返回包含 recording、filePath、bytesWritten、maxBytes 的状态契约：通过
+证据：WebApiApplication 映射 GET /api/pcap/status、POST /api/pcap/start、POST /api/pcap/stop；PcapRecordingStatus 与 PcapApiReturnsStatusContractAndControlsLifecycle 覆盖字段契约。
+
+6. WebConsole 能显示并刷新录制状态，不增加排除范围内的高级功能：通过
+证据：PcapRecordingPanel 显示 recording、filePath、bytesWritten、maxBytes，挂载后立即 refresh 并每 5 秒刷新，仅提供 start/stop 操作；未发现 pcap 下载、搜索、回放或图表控件；npm run build 通过。
+
+Scope check：
+
+- 未实现 TLS 内容解密、TLS key logging 或 TLS 传输新能力：通过。
+- 未实现 pcapng 高级元数据：通过。
+- 未实现报文索引搜索、pcap 下载、报文回放或图表分析：通过。
+- 未引入 ODX/PDX、SecurityAccess 插件、异常注入或新的诊断业务能力：通过。
+- 未改变 UDS 服务语义；DoIP/TCP/UDP 主流程只被旁路观察：通过。
+- 未做无关重构：通过。
+
+补充说明：
+- `dotnet format` 未作为阻塞项执行；本轮按触发评论执行核心验证、WebConsole build、git diff check、acceptance criteria 与 scope check。

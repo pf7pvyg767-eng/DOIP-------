@@ -148,6 +148,13 @@ export interface ControlServicesSnapshot {
   dtcSetting: DtcSettingStateSummary;
 }
 
+export interface PcapRecordingStatus {
+  recording: boolean;
+  filePath?: string | null;
+  bytesWritten: number;
+  maxBytes: number;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -230,6 +237,18 @@ export async function loadControlServices(): Promise<ControlServicesSnapshot> {
   return getJson<ControlServicesSnapshot>("/api/control-services");
 }
 
+export async function loadPcapStatus(): Promise<PcapRecordingStatus> {
+  return getJson<PcapRecordingStatus>("/api/pcap/status");
+}
+
+export async function startPcapRecording(): Promise<PcapRecordingStatus> {
+  return postPcapOperation("start");
+}
+
+export async function stopPcapRecording(): Promise<PcapRecordingStatus> {
+  return postPcapOperation("stop");
+}
+
 export async function activateDtc(code: string, body: DtcActivateRequest): Promise<void> {
   await postDtcOperation(code, "activate", body);
 }
@@ -260,6 +279,21 @@ async function postDtcOperation(code: string, operation: "activate" | "clear", b
 
     throw new Error(message);
   }
+}
+
+async function postPcapOperation(operation: "start" | "stop"): Promise<PcapRecordingStatus> {
+  const response = await fetch(`/api/pcap/${operation}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`PCAP ${operation} failed with HTTP ${response.status}.`);
+  }
+
+  return (await response.json()) as PcapRecordingStatus;
 }
 
 export function createRuntimeEventSocket(): WebSocket {

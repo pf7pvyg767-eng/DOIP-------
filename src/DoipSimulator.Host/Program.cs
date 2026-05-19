@@ -5,6 +5,7 @@ using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.Observability.Logging;
+using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Host;
 using DoipSimulator.Protocols.Doip;
@@ -189,8 +190,9 @@ namespace DoipSimulator.Host
                 var controlServiceStateStore = new ControlServiceStateStore(config, eventPublisher);
                 var connectionRegistry = new ConnectionRegistry();
                 var ecuRuntimeState = new EcuRuntimeState(TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress));
-                await using var udpServer = CreateUdpServer(config, eventPublisher);
-                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore);
+                await using var pcapRecorder = new PcapRecorder(eventPublisher: eventPublisher);
+                await using var udpServer = CreateUdpServer(config, eventPublisher, pcapRecorder);
+                await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, pcapRecorder);
                 var startedAt = DateTimeOffset.UtcNow;
                 await using var app = WebApiApplication.Create(
                     [],
@@ -202,7 +204,8 @@ namespace DoipSimulator.Host
                     ecuRuntimeState: ecuRuntimeState,
                     didRuntimeStore: didRuntimeStore,
                     dtcRuntimeStore: dtcRuntimeStore,
-                    controlServiceStateStore: controlServiceStateStore);
+                    controlServiceStateStore: controlServiceStateStore,
+                    pcapRecorder: pcapRecorder);
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);
@@ -298,12 +301,13 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, and Flash download 0x34/0x36/0x37 MVP state; it does not start complex Routine scripts, real file flashing, TLS, PCAP, database, DLL loading, OEM security algorithms, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, Flash download 0x34/0x36/0x37 MVP state, and PCAP recording MVP; it does not start complex Routine scripts, real file flashing, TLS, database, DLL loading, OEM security algorithms, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
             SimulatorConfig config,
-            IRuntimeEventPublisher eventPublisher)
+            IRuntimeEventPublisher eventPublisher,
+            IPcapRecorder pcapRecorder)
         {
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var targetAddress = IPAddress.Parse(config.Network.VehicleAnnouncementTargetAddress);
@@ -323,7 +327,7 @@ namespace DoipSimulator.Host
                 new DoipCodec(),
                 eventPublisher);
 
-            return new UdpDoipServer(options, handler);
+            return new UdpDoipServer(options, handler, pcapRecorder);
         }
 
         private static TcpDoipServer CreateTcpServer(
@@ -333,7 +337,8 @@ namespace DoipSimulator.Host
             EcuRuntimeState ecuRuntimeState,
             DidRuntimeStore didRuntimeStore,
             DtcRuntimeStore dtcRuntimeStore,
-            ControlServiceStateStore controlServiceStateStore)
+            ControlServiceStateStore controlServiceStateStore,
+            IPcapRecorder pcapRecorder)
         {
             var bindAddress = IPAddress.Parse(config.Network.BindAddress);
             var entityLogicalAddress = TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress);
@@ -370,7 +375,8 @@ namespace DoipSimulator.Host
                     ],
                     eventPublisher,
                     config,
-                    ecuRuntimeState));
+                    ecuRuntimeState),
+                pcapRecorder);
         }
     }
 
