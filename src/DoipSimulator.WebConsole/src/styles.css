@@ -112,6 +112,10 @@ p {
   margin-bottom: 18px;
 }
 
+.facts--pcap {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .fact {
   min-width: 0;
   border: 1px solid #e5e7eb;
@@ -311,6 +315,12 @@ p {
   opacity: 0.55;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .did-list {
   display: grid;
   gap: 12px;
@@ -451,7 +461,8 @@ p {
 @media (max-width: 820px) {
   .facts--three,
   .facts--config,
-  .facts--ecu {
+  .facts--ecu,
+  .facts--pcap {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -480,7 +491,8 @@ p {
 
   .facts--three,
   .facts--config,
-  .facts--ecu {
+  .facts--ecu,
+  .facts--pcap {
     grid-template-columns: 1fr;
   }
 }

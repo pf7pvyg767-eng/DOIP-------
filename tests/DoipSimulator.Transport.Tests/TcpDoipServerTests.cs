@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
 using DoipSimulator.Protocols.Uds;
@@ -440,6 +441,36 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task ActivePcapRecorderCapturesTcpUdsTraffic()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        await using var recorder = new PcapRecorder(CreateTempDirectory());
+        var started = await recorder.StartAsync();
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            pcapRecorder: recorder);
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x10, 0x03]));
+        await ReadFrameAsync(stream);
+        var stopped = await recorder.StopAsync();
+
+        Assert.False(stopped.Recording);
+        Assert.NotNull(started.FilePath);
+        Assert.True(File.Exists(started.FilePath));
+        Assert.True(new FileInfo(started.FilePath!).Length > PcapWriter.GlobalHeaderLength);
+    }
+
+    [Fact]
     public async Task TcpDisconnectClearsActiveFlashDownloadState()
     {
         var events = new CapturingEventSink();
@@ -624,7 +655,8 @@ public class TcpDoipServerTests
         IRuntimeEventPublisher eventPublisher,
         IReadOnlySet<ushort> whitelist,
         TimeSpan? idleTimeout = null,
-        IUdsDispatcher? udsDispatcher = null)
+        IUdsDispatcher? udsDispatcher = null,
+        IPcapRecorder? pcapRecorder = null)
     {
         return new TcpDoipServer(
             new TcpDoipServerOptions(
@@ -636,7 +668,8 @@ public class TcpDoipServerTests
             codec,
             registry,
             eventPublisher,
-            udsDispatcher);
+            udsDispatcher,
+            pcapRecorder);
     }
 
     private static IUdsDispatcher CreateUdsDispatcher(
@@ -766,5 +799,12 @@ public class TcpDoipServerTests
         {
             await Task.Delay(50, cancellation.Token);
         }
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        return directory;
     }
 }
