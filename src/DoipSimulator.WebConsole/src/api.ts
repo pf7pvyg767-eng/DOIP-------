@@ -182,6 +182,25 @@ export interface FaultRuntimeSnapshot {
   nextCustomResponse?: FaultProfile["nextCustomResponse"];
 }
 
+export interface ImportReport {
+  success: boolean;
+  imported: {
+    entityInfo: boolean;
+    dids: number;
+    dtcs: number;
+    routines: number;
+  };
+  skipped: Array<{
+    path: string;
+    reason: string;
+  }>;
+  errors: Array<{
+    path: string;
+    message: string;
+  }>;
+  saved: boolean;
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -327,6 +346,24 @@ export async function configureNextNrc(serviceId: string, nrc: string): Promise<
   }
 
   return (await response.json()) as FaultRuntimeSnapshot;
+}
+
+export async function uploadDiagnosticImport(kind: "odx" | "pdx", file: File): Promise<ImportReport> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`/api/import/${kind}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Diagnostic import failed."));
+  }
+
+  return (await response.json()) as ImportReport;
 }
 
 export async function activateDtc(code: string, body: DtcActivateRequest): Promise<void> {

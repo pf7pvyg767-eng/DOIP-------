@@ -142,6 +142,63 @@ p {
   line-height: 1.35;
 }
 
+.import-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.import-controls input[type="file"] {
+  min-width: min(100%, 280px);
+}
+
+.import-report {
+  margin-top: 16px;
+}
+
+.import-report--failed {
+  border-left: 3px solid #b42318;
+  padding-left: 12px;
+}
+
+.import-list {
+  margin-top: 14px;
+}
+
+.import-list h3 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 0.95rem;
+}
+
+.import-list ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.import-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.import-list span {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+}
+
+.import-list small {
+  color: #667085;
+}
+
+.import-list--errors small {
+  color: #b42318;
+}
+
 .status-pill {
   display: inline-flex;
   min-height: 28px;

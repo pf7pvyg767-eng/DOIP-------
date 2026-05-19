@@ -1,0 +1,115 @@
+﻿{
+  "task": "task-025",
+  "title": "ODX/PDX 导入子集",
+  "status": "completed",
+  "verified_at": "2026-05-19T13:25:43+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "baseline": {
+    "apply_run": "1f1da9f3-a7f3-4475-97f4-97d32da5c67c",
+    "implementation_tree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\6739ab32\\workdir\\DOIP-------",
+    "openspec_change": "openspec/changes/task-025"
+  },
+  "commands": [
+    {
+      "command": "openspec validate task-025 --strict",
+      "status": "passed",
+      "summary": "Change 'task-025' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "构建成功，0 errors；仅有非阻塞 NU1900 包漏洞数据源访问 warning"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "230 passed / 0 failed / 0 skipped"
+    },
+    {
+      "command": "npm run build",
+      "working_directory": "src/DoipSimulator.WebConsole",
+      "status": "passed",
+      "summary": "vue-tsc --noEmit 和 vite build 均通过，32 modules transformed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "无 whitespace error；仅有 Windows LF/CRLF normalization warning"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": ".odx 上传/导入支持",
+      "status": "passed",
+      "evidence": "POST /api/import/odx；OdxImportServiceTests.ApiUploadsOdxAndPersistsReport"
+    },
+    {
+      "criterion": ".pdx 上传、安全解压和 ODX 入口识别支持",
+      "status": "passed",
+      "evidence": "PdxPackageReader 路径安全检查、入口选择；OdxImportServiceTests.PdxReaderIdentifiesOdxEntryAndSkipsOtherResources / ApiUploadsPdxAndImportsEcuInfo"
+    },
+    {
+      "criterion": "ECU 基本信息解析",
+      "status": "passed",
+      "evidence": "OdxImportService.ParseEntityInfo；测试断言 VIN 和 logicalAddress 导入"
+    },
+    {
+      "criterion": "DID 基础信息解析",
+      "status": "passed",
+      "evidence": "OdxImportService.ParseDids；测试断言 0xF191 固定 hex 值 1234"
+    },
+    {
+      "criterion": "导入报告包含 imported / skipped / errors",
+      "status": "passed",
+      "evidence": "OdxImportReport 包含 Imported、Skipped、Errors；WebConsole ImportPanel 展示 skipped/errors"
+    },
+    {
+      "criterion": "导入结果合并并保存到 SimulatorConfig",
+      "status": "passed",
+      "evidence": "OdxImportMerger.MergeAndSaveAsync；ApiUploadsOdxAndPersistsReport / ApiUploadsPdxAndImportsEcuInfo"
+    },
+    {
+      "criterion": "导入后的 DID 可通过既有 0x22 ReadDataByIdentifier 路径读取",
+      "status": "passed",
+      "evidence": "OdxImportServiceTests.MergeAndSavePersistsImportedDidAndRuntimeReadUsesExistingUdsPath"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "不实现全量 ODX 解析",
+      "status": "passed",
+      "evidence": "OdxImportService 仅解析 ECU 基本字段和 DID ID/name/fixed hex value；unsupported 分支进入 skipped"
+    },
+    {
+      "item": "不完整解析 DTC、Routine、Flash",
+      "status": "passed",
+      "evidence": "DTC/ROUTINE/FLASH 被列为 UnsupportedBranches；Imported.Dtcs 和 Imported.Routines 保持 0"
+    },
+    {
+      "item": "不做第三方工具链兼容认证",
+      "status": "passed",
+      "evidence": "未发现兼容认证或外部工具链适配声明；仅实现 zip/ODX MVP 子集"
+    },
+    {
+      "item": "不新增异常注入、SecurityAccess DLL 插件、TLS 证书模拟扩展或其他无关能力",
+      "status": "passed",
+      "evidence": "task-025 变更集中在 Core/Odx、WebApi 导入入口、WebConsole ImportPanel 和 ODX 测试；未新增相关能力"
+    }
+  ],
+  "environment_notes": [
+    {
+      "area": "dotnet build / dotnet test",
+      "classification": "non-blocking network warning",
+      "detail": "出现 NU1900 包漏洞数据源访问 warning，但 build/test 均通过，不是业务失败"
+    },
+    {
+      "area": "git diff --check",
+      "classification": "non-blocking line-ending warning",
+      "detail": "仅有 Windows LF/CRLF normalization warning，无 whitespace error"
+    }
+  ],
+  "decision": "task-025 completed，可进入 push/PR"
+}
