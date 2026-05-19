@@ -100,6 +100,101 @@ public class SecurityAccessServiceTests
         Assert.DoesNotContain(securityEvent.Data.Keys, key => key.Contains("key", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task PluginSeedAndCorrectKeyUnlockLevel()
+    {
+        var config = CreateConfig();
+        config.SecurityPlugin.Enabled = true;
+        config.SecurityPlugin.DllPath = SecurityPluginTestSupport.BuildSamplePlugin();
+        config.SecurityPlugin.TimeoutMs = 500;
+        var ecuState = new EcuRuntimeState(0x0E00);
+        var service = new SecurityAccessService(config, ecuState);
+
+        var seedResponses = await service.HandleAsync(
+            new UdsRequest(0x27, [0x01]),
+            new UdsContext());
+        var seedResponse = Assert.Single(seedResponses).ToBytes();
+
+        Assert.Equal([0x67, 0x01, 0xD0, 0x01, 0x01, 0x23], seedResponse);
+
+        var key = SecurityPluginTestSupport.ComputeSampleKey(seedResponse[2..]);
+        var keyResponses = await service.HandleAsync(
+            new UdsRequest(0x27, [0x02, .. key]),
+            new UdsContext());
+
+        Assert.Equal([0x67, 0x02], Assert.Single(keyResponses).ToBytes());
+        Assert.True(ecuState.IsSecurityLevelUnlocked(1));
+    }
+
+    [Fact]
+    public async Task PluginWrongKeyReturnsNrcAndKeepsLevelLocked()
+    {
+        var config = CreateConfig(maxFailedAttempts: 3);
+        config.SecurityPlugin.Enabled = true;
+        config.SecurityPlugin.DllPath = SecurityPluginTestSupport.BuildSamplePlugin();
+        config.SecurityPlugin.TimeoutMs = 500;
+        var ecuState = new EcuRuntimeState(0x0E00);
+        var service = new SecurityAccessService(config, ecuState);
+
+        await service.HandleAsync(new UdsRequest(0x27, [0x01]), new UdsContext());
+        var responses = await service.HandleAsync(
+            new UdsRequest(0x27, [0x02, 0x00, 0x00, 0x00, 0x00]),
+            new UdsContext());
+
+        Assert.Equal([0x7F, 0x27, 0x35], Assert.Single(responses).ToBytes());
+        Assert.False(ecuState.IsSecurityLevelUnlocked(1));
+    }
+
+    [Fact]
+    public async Task PluginLoadFailureReturnsNrcWithoutCrashing()
+    {
+        var config = CreateConfig();
+        config.SecurityPlugin.Enabled = true;
+        config.SecurityPlugin.DllPath = Path.Combine(Path.GetTempPath(), "missing-security-plugin.dll");
+        var sink = new CapturingEventSink();
+        var service = new SecurityAccessService(
+            config,
+            new EcuRuntimeState(0x0E00),
+            new RuntimeEventBus([sink]));
+
+        var responses = await service.HandleAsync(
+            new UdsRequest(0x27, [0x01]),
+            new UdsContext(ConnectionId: "conn_000001"));
+
+        Assert.Equal([0x7F, 0x27, 0x22], Assert.Single(responses).ToBytes());
+        Assert.Contains(
+            sink.Events,
+            item =>
+            {
+                object? reason = null;
+                item.Data?.TryGetValue("reason", out reason);
+                return item.Name == "uds.securityAccess.processed"
+                    && reason?.ToString()?.Contains("does not exist", StringComparison.OrdinalIgnoreCase) == true;
+            });
+    }
+
+    [Fact]
+    public async Task PluginCallFailureReturnsNrcWithoutCrashing()
+    {
+        var config = CreateConfig();
+        config.Uds.SecurityAccess[0].Level = 99;
+        config.SecurityPlugin.Enabled = true;
+        config.SecurityPlugin.DllPath = SecurityPluginTestSupport.BuildSamplePlugin();
+        config.SecurityPlugin.TimeoutMs = 500;
+        var sink = new CapturingEventSink();
+        var service = new SecurityAccessService(
+            config,
+            new EcuRuntimeState(0x0E00),
+            new RuntimeEventBus([sink]));
+
+        var responses = await service.HandleAsync(
+            new UdsRequest(0x27, [0x01]),
+            new UdsContext());
+
+        Assert.Equal([0x7F, 0x27, 0x22], Assert.Single(responses).ToBytes());
+        Assert.Contains(sink.Events, item => item.Name == "uds.securityPlugin.failed");
+    }
+
     public static SimulatorConfig CreateConfig(int maxFailedAttempts = 3, int lockoutMs = 1000)
     {
         var config = SimulatorConfig.CreateDefault();

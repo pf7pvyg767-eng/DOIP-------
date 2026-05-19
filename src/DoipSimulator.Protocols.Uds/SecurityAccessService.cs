@@ -1,6 +1,7 @@
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.RuntimeEvents;
+using DoipSimulator.Protocols.Uds.Plugins;
 
 namespace DoipSimulator.Protocols.Uds;
 
@@ -13,6 +14,8 @@ public sealed class SecurityAccessService : IUdsService
     private readonly EcuRuntimeState ecuState;
     private readonly Func<DateTimeOffset> nowProvider;
     private readonly IRuntimeEventPublisher eventPublisher;
+    private readonly ISecurityAccessAlgorithm algorithm;
+    private readonly string? pluginLoadError;
 
     public SecurityAccessService(
         SimulatorConfig config,
@@ -24,6 +27,11 @@ public sealed class SecurityAccessService : IUdsService
         this.ecuState = ecuState;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
         this.nowProvider = nowProvider ?? (() => DateTimeOffset.UtcNow);
+        var pluginLoad = SecurityPluginLoader.Load(config.SecurityPlugin, this.eventPublisher);
+        pluginLoadError = config.SecurityPlugin.Enabled ? pluginLoad.Error : null;
+        algorithm = pluginLoad.IsAvailable && pluginLoad.Algorithm is not null
+            ? pluginLoad.Algorithm
+            : new BuiltInSecurityAccessAlgorithm();
 
         seedSubFunctions = [];
         keySubFunctions = [];
@@ -112,7 +120,25 @@ public sealed class SecurityAccessService : IUdsService
             return await RejectAsync(context, request.OriginalServiceId, subFunction, level.Level, NegativeResponseCode.RequiredTimeDelayNotExpired, "lockout active", cancellationToken);
         }
 
-        var seed = ecuState.StoreSecuritySeed(level.Level, GenerateSeed(level, subFunction));
+        if (pluginLoadError is not null)
+        {
+            return await RejectAsync(context, request.OriginalServiceId, subFunction, level.Level, NegativeResponseCode.ConditionsNotCorrect, pluginLoadError, cancellationToken);
+        }
+
+        var seedResult = algorithm.GenerateSeed(level, subFunction);
+        if (seedResult.Status != SecurityPluginStatus.Success || seedResult.Seed.Length == 0)
+        {
+            return await RejectAsync(
+                context,
+                request.OriginalServiceId,
+                subFunction,
+                level.Level,
+                NegativeResponseCode.ConditionsNotCorrect,
+                seedResult.Reason ?? "security plugin seed generation failed",
+                cancellationToken);
+        }
+
+        var seed = ecuState.StoreSecuritySeed(level.Level, seedResult.Seed);
         await PublishSecurityEventAsync(context, subFunction, level.Level, "seed-issued", null, cancellationToken);
         return [new RawUdsResponse([0x67, subFunction, .. seed])];
     }
@@ -141,9 +167,21 @@ public sealed class SecurityAccessService : IUdsService
             return await RejectAsync(context, request.OriginalServiceId, subFunction, level.Level, NegativeResponseCode.ConditionsNotCorrect, "seed request required first", cancellationToken);
         }
 
-        var expectedKey = ComputeExpectedKey(level, seed);
         var suppliedKey = request.Payload[1..];
-        if (!expectedKey.SequenceEqual(suppliedKey))
+        var verification = algorithm.VerifyKey(level, seed, suppliedKey);
+        if (verification.Status == SecurityPluginStatus.Failure)
+        {
+            return await RejectAsync(
+                context,
+                request.OriginalServiceId,
+                subFunction,
+                level.Level,
+                NegativeResponseCode.ConditionsNotCorrect,
+                verification.Reason ?? "security plugin key verification failed",
+                cancellationToken);
+        }
+
+        if (verification.Status == SecurityPluginStatus.InvalidKey)
         {
             var attempts = ecuState.RecordSecurityKeyFailure(
                 level.Level,
@@ -199,11 +237,6 @@ public sealed class SecurityAccessService : IUdsService
                     ["reason"] = reason,
                 }),
             cancellationToken);
-    }
-
-    private static byte[] GenerateSeed(SecurityAccessConfig level, byte subFunction)
-    {
-        return [(byte)level.Level, subFunction, 0xA5, 0x5A];
     }
 
     private static byte[] ApplySeedParameter(

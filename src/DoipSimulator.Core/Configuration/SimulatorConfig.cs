@@ -10,6 +10,8 @@ public sealed class SimulatorConfig
 
     public TlsConfig Tls { get; set; } = new();
 
+    public SecurityPluginConfig SecurityPlugin { get; set; } = new();
+
     public static SimulatorConfig CreateDefault()
     {
         return new SimulatorConfig
@@ -102,6 +104,12 @@ public sealed class SimulatorConfig
                 ServerPrivateKeyPath = null,
                 ClientCaPath = null,
                 RequireClientCertificate = false,
+            },
+            SecurityPlugin = new SecurityPluginConfig
+            {
+                Enabled = false,
+                DllPath = null,
+                TimeoutMs = 500,
             },
         };
     }
@@ -303,4 +311,13 @@ public sealed class TlsConfig
     public string? ClientCaPath { get; set; }
 
     public bool RequireClientCertificate { get; set; }
+}
+
+public sealed class SecurityPluginConfig
+{
+    public bool Enabled { get; set; }
+
+    public string? DllPath { get; set; }
+
+    public int TimeoutMs { get; set; } = 500;
 }

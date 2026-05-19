@@ -87,6 +87,7 @@ public static partial class ConfigValidator
         ValidateSecurityAccess(config.Uds?.SecurityAccess, errors);
         ValidateFlash(config.Uds?.Flash, errors);
         ValidateTls(config.Tls, errors);
+        ValidateSecurityPlugin(config.SecurityPlugin, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -554,6 +555,31 @@ public static partial class ConfigValidator
             errors.Add(new ConfigValidationError(
                 "tls.clientCaPath",
                 "TLS client CA path is required when client certificates are required."));
+        }
+    }
+
+    private static void ValidateSecurityPlugin(SecurityPluginConfig? securityPlugin, List<ConfigValidationError> errors)
+    {
+        if (securityPlugin is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "securityPlugin",
+                "Security plugin configuration is required."));
+            return;
+        }
+
+        if (securityPlugin.TimeoutMs < 1)
+        {
+            errors.Add(new ConfigValidationError(
+                "securityPlugin.timeoutMs",
+                "Security plugin timeout must be a positive millisecond value."));
+        }
+
+        if (securityPlugin.Enabled && string.IsNullOrWhiteSpace(securityPlugin.DllPath))
+        {
+            errors.Add(new ConfigValidationError(
+                "securityPlugin.dllPath",
+                "Security plugin DLL path is required when the plugin is enabled."));
         }
     }
 

@@ -193,6 +193,33 @@ public class ConfigTests
     }
 
     [Fact]
+    public void SecurityPluginDisabledDoesNotRequireDllPath()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.SecurityPlugin.Enabled = false;
+        config.SecurityPlugin.DllPath = null;
+        config.SecurityPlugin.TimeoutMs = 500;
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void SecurityPluginEnabledRequiresDllPathAndPositiveTimeout()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.SecurityPlugin.Enabled = true;
+        config.SecurityPlugin.DllPath = "";
+        config.SecurityPlugin.TimeoutMs = 0;
+
+        var result = ConfigValidator.Validate(config);
+
+        Assert.Contains(result.Errors, error => error.Field == "securityPlugin.dllPath");
+        Assert.Contains(result.Errors, error => error.Field == "securityPlugin.timeoutMs");
+    }
+
+    [Fact]
     public void TimingValidationReturnsFieldSpecificErrors()
     {
         var config = SimulatorConfig.CreateDefault();

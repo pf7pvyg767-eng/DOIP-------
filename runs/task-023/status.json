@@ -1,0 +1,109 @@
+{
+  "task": "task-023",
+  "title": "DLL 安全算法插件 MVP",
+  "status": "completed",
+  "verified_at": "2026-05-19T12:16:24+08:00",
+  "agent": {
+    "name": "测试与状态智能体",
+    "id": "71cd944c-68d0-4621-a9d1-e2bc3716bf1b"
+  },
+  "baseline": {
+    "apply_run": "be3b565e-01b8-4c95-9f9c-4a510ecfa8b7",
+    "implementation_tree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\4a25195e\\workdir\\DOIP-------",
+    "openspec_change": "openspec/changes/task-023"
+  },
+  "commands": [
+    {
+      "command": "openspec validate task-023 --strict",
+      "status": "passed",
+      "summary": "Change 'task-023' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "status": "passed",
+      "summary": "0 errors；存在非阻塞 NU1900 包漏洞数据源访问 warning"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "status": "passed_after_permission_rerun",
+      "summary": "沙箱内首次因 Windows SChannel/PFX 临时证书私钥访问限制失败；沙箱外重跑通过，207 passed / 0 failed / 0 skipped"
+    },
+    {
+      "command": "dotnet publish .\\samples\\SecurityPluginExample\\SecurityPluginExample.csproj -c Release -o .\\artifacts\\SecurityPluginExample --nologo",
+      "status": "passed",
+      "summary": "示例 SecurityPluginExample NativeAOT DLL 发布到 artifacts/SecurityPluginExample"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "无 whitespace error；仅有 Windows LF/CRLF normalization warning"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "示例 DLL 可加载",
+      "status": "passed",
+      "evidence": "SecurityPluginLoaderTests.SampleDllLoadsAndResolvesAbiFunctions"
+    },
+    {
+      "criterion": "0x27 seed 来自 DLL",
+      "status": "passed",
+      "evidence": "SecurityAccessServiceTests.PluginSeedAndCorrectKeyUnlockLevel 验证 seed 为 [0xD0, 0x01, 0x01, 0x23]"
+    },
+    {
+      "criterion": "正确 key 解锁成功",
+      "status": "passed",
+      "evidence": "SecurityAccessServiceTests.PluginSeedAndCorrectKeyUnlockLevel 验证 0x67 0x02 且安全等级解锁"
+    },
+    {
+      "criterion": "错误 key 返回 NRC",
+      "status": "passed",
+      "evidence": "SecurityAccessServiceTests.PluginWrongKeyReturnsNrcAndKeepsLevelLocked 验证 [0x7F, 0x27, 0x35]"
+    },
+    {
+      "criterion": "DLL 缺失错误清晰且服务不崩溃",
+      "status": "passed",
+      "evidence": "SecurityPluginLoaderTests.MissingDllReturnsClearErrorWithoutThrowing 与 SecurityAccessServiceTests.PluginLoadFailureReturnsNrcWithoutCrashing"
+    },
+    {
+      "criterion": "ABI 不匹配错误清晰且服务不崩溃",
+      "status": "passed",
+      "evidence": "SecurityPluginLoaderTests.AbiMismatchReturnsClearErrorWithoutThrowing 验证 expected 1 / actual 2"
+    },
+    {
+      "criterion": "插件调用失败错误清晰且服务不崩溃",
+      "status": "passed",
+      "evidence": "SecurityAccessServiceTests.PluginCallFailureReturnsNrcWithoutCrashing 验证 NRC 与 uds.securityPlugin.failed 事件"
+    }
+  ],
+  "scope_check": [
+    {
+      "item": "不得实现进程隔离",
+      "status": "passed",
+      "evidence": "ABI 文档明确 MVP in-process 且不提供 process isolation/sandboxing；实现未引入插件进程隔离"
+    },
+    {
+      "item": "不得支持脚本插件",
+      "status": "passed",
+      "evidence": "仅支持 documented DLL ABI；未新增 JavaScript/Python/Lua/C# script 插件执行"
+    },
+    {
+      "item": "不得实现企业真实 OEM 算法",
+      "status": "passed",
+      "evidence": "示例算法标注为 deterministic test-only non-OEM，未加入专有算法"
+    },
+    {
+      "item": "不得完整实现 0x84 加解密",
+      "status": "passed",
+      "evidence": "未发现 task-023 实现 SecuredDataTransmission 0x84 加解密"
+    }
+  ],
+  "permission_notes": [
+    {
+      "area": "dotnet test",
+      "classification": "Windows sandbox permission issue",
+      "detail": "沙箱内 TLS 测试导入 PFX 时出现 CryptographicException: 拒绝访问；沙箱外同一命令通过，判定非业务失败"
+    }
+  ],
+  "decision": "task-023 completed，可进入 push/PR 步骤"
+}
