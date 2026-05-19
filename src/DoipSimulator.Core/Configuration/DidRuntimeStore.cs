@@ -110,6 +110,22 @@ public sealed class DidRuntimeStore
         }
     }
 
+    public bool Upsert(DidConfig did)
+    {
+        if (!ConfigValidator.TryParseDidIdentifier(did, out var identifier)
+            || !string.Equals(did.ValueEncoding, "hex", StringComparison.OrdinalIgnoreCase)
+            || !TryParseHexBytes(did.Value, out var value))
+        {
+            return false;
+        }
+
+        lock (gate)
+        {
+            entries[identifier] = new DidRuntimeEntry(identifier, did, value!);
+            return true;
+        }
+    }
+
     public async ValueTask<DidWriteResult> WriteHexAsync(
         ushort did,
         string valueEncoding,

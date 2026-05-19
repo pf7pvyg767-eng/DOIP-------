@@ -4,6 +4,7 @@ using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.Faults;
+using DoipSimulator.Core.Odx;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 
@@ -46,6 +47,8 @@ public sealed record FaultDisconnectRequest(string ConnectionId);
 public sealed record FaultNextNrcRequest(string ServiceId, string Nrc);
 
 public sealed record FaultErrorResponse(string Code, string Message);
+
+public sealed record ImportErrorResponse(string Code, string Message);
 
 public static class WebApiApplication
 {
@@ -105,6 +108,28 @@ public static class WebApiApplication
             var config = await store.LoadAsync(configPath, cancellationToken);
             return Results.Ok(config);
         });
+
+        app.MapPost("/api/import/odx", async (HttpRequest request, CancellationToken cancellationToken) =>
+            await ImportDiagnosticFileAsync(
+                request,
+                ".odx",
+                stream => new OdxImportService().ImportAsync(stream, cancellationToken),
+                store,
+                configPath,
+                didStore,
+                publisher,
+                cancellationToken));
+
+        app.MapPost("/api/import/pdx", async (HttpRequest request, CancellationToken cancellationToken) =>
+            await ImportDiagnosticFileAsync(
+                request,
+                ".pdx",
+                stream => new PdxPackageReader().ImportAsync(stream, cancellationToken),
+                store,
+                configPath,
+                didStore,
+                publisher,
+                cancellationToken));
 
         app.MapGet("/api/connections", () => Results.Ok(connections.GetActiveSnapshots()));
 
@@ -484,6 +509,56 @@ public static class WebApiApplication
         return string.IsNullOrWhiteSpace(configuredPath)
             ? Path.Combine(AppContext.BaseDirectory, "simulator.json")
             : configuredPath;
+    }
+
+    private static async Task<IResult> ImportDiagnosticFileAsync(
+        HttpRequest request,
+        string expectedExtension,
+        Func<Stream, Task<OdxImportOperation>> import,
+        ConfigStore store,
+        string configPath,
+        DidRuntimeStore didStore,
+        IConfigChangePublisher publisher,
+        CancellationToken cancellationToken)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new ImportErrorResponse("INVALID_IMPORT_UPLOAD", "Import request must be multipart/form-data."));
+        }
+
+        var form = await request.ReadFormAsync(cancellationToken);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null || file.Length == 0)
+        {
+            return Results.BadRequest(new ImportErrorResponse("INVALID_IMPORT_UPLOAD", "Import file is required."));
+        }
+
+        if (!file.FileName.EndsWith(expectedExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new ImportErrorResponse(
+                "INVALID_IMPORT_EXTENSION",
+                $"Import file must use the {expectedExtension} extension."));
+        }
+
+        await using var stream = file.OpenReadStream();
+        var operation = await import(stream);
+        if (operation.Report.Success)
+        {
+            var config = await store.LoadAsync(configPath, cancellationToken);
+            await new OdxImportMerger().MergeAndSaveAsync(
+                config,
+                configPath,
+                store,
+                operation,
+                didStore,
+                cancellationToken);
+            if (operation.Report.Saved)
+            {
+                publisher.Publish(new ConfigChangedEvent(DateTimeOffset.UtcNow, configPath));
+            }
+        }
+
+        return Results.Ok(operation.Report);
     }
 
     private static bool TryParseDidRouteValue(string value, out ushort did)
