@@ -58,7 +58,10 @@ public class ConfigTests
                 "securityAccess": [],
                 "flash": {
                   "enabled": true,
-                  "workingDirectory": "flash-work"
+                  "maxMemorySize": 4096,
+                  "maxBlockLength": 256,
+                  "allowedSessions": ["programming"],
+                  "securityRequired": false
                 }
               },
               "tls": {
@@ -320,7 +323,10 @@ public class ConfigTests
         config.Uds.Flash = new FlashConfig
         {
             Enabled = true,
-            WorkingDirectory = "flash",
+            MaxMemorySize = 4096,
+            MaxBlockLength = 256,
+            AllowedSessions = ["programming"],
+            SecurityRequired = false,
         };
         config.Tls.Enabled = true;
         config.Tls.ServerCertificatePath = "cert.pem";
@@ -339,6 +345,7 @@ public class ConfigTests
         Assert.Equal("VIN", reloaded.Uds.Dids[0].Name);
         Assert.Equal("hex", reloaded.Uds.Dids[0].ValueEncoding);
         Assert.True(reloaded.Uds.Flash!.Enabled);
+        Assert.Equal(4096, reloaded.Uds.Flash.MaxMemorySize);
         Assert.Equal("cert.pem", reloaded.Tls.ServerCertificatePath);
         Assert.True(reloaded.Tls.RequireClientCertificate);
     }

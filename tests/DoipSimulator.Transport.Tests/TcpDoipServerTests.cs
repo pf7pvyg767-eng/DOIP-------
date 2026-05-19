@@ -400,6 +400,80 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task FlashDownloadMainPathAfterRoutingActivationCompletesOverTcp()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        var config = CreateFlashConfig();
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, config: config));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        await ReadFrameAsync(stream);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x10, 0x02]));
+        Assert.Equal([0x50, 0x02, 0x00, 0x32, 0x13, 0x88], (await ReadFrameAsync(stream)).Payload[4..]);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x27, 0x01]));
+        var seedResponse = await ReadFrameAsync(stream);
+        var key = SecurityAccessService.ComputeExpectedKey(config.Uds.SecurityAccess[0], seedResponse.Payload[6..]);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x27, 0x02, .. key]));
+        Assert.Equal([0x67, 0x02], (await ReadFrameAsync(stream)).Payload[4..]);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x34, 0x00, 0x44, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x05]));
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x36, 0x01, 0xAA, 0xBB]));
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x36, 0x02, 0xCC, 0xDD, 0xEE]));
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x37]));
+
+        Assert.Equal([0x74, 0x20, 0x00, 0x04], (await ReadFrameAsync(stream)).Payload[4..]);
+        Assert.Equal([0x76, 0x01], (await ReadFrameAsync(stream)).Payload[4..]);
+        Assert.Equal([0x76, 0x02], (await ReadFrameAsync(stream)).Payload[4..]);
+        Assert.Equal([0x77], (await ReadFrameAsync(stream)).Payload[4..]);
+    }
+
+    [Fact]
+    public async Task TcpDisconnectClearsActiveFlashDownloadState()
+    {
+        var events = new CapturingEventSink();
+        var eventPublisher = new RuntimeEventBus([events]);
+        var registry = new ConnectionRegistry();
+        var state = new EcuRuntimeState(0x0E00);
+        var config = CreateFlashConfig(securityRequired: false);
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, config: config, state: state));
+        await server.StartAsync();
+
+        using (var client = new TcpClient())
+        {
+            await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+            await using var stream = client.GetStream();
+            await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+            await ReadFrameAsync(stream);
+            await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x10, 0x02]));
+            await ReadFrameAsync(stream);
+            await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x34, 0x00, 0x44, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x05]));
+            await ReadFrameAsync(stream);
+            Assert.True(state.GetFlashDownloadSnapshot().IsActive);
+        }
+
+        await WaitUntilAsync(() =>
+            !state.GetFlashDownloadSnapshot().IsActive &&
+            events.Events.Any(runtimeEvent => runtimeEvent.Name == "uds.flash.download.cancelled"));
+        Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "uds.flash.download.cancelled");
+    }
+
+    [Fact]
     public async Task ReadDtcInformationAfterRoutingActivationReturnsActiveDtc()
     {
         var events = new CapturingEventSink();
@@ -569,9 +643,10 @@ public class TcpDoipServerTests
         IRuntimeEventPublisher eventPublisher,
         bool dtcActive = false,
         DtcRuntimeStore? dtcRuntimeStore = null,
-        SimulatorConfig? config = null)
+        SimulatorConfig? config = null,
+        EcuRuntimeState? state = null)
     {
-        var state = new EcuRuntimeState(0x0E00);
+        state ??= new EcuRuntimeState(0x0E00);
         config ??= SimulatorConfig.CreateDefault();
         config.Uds.Dids =
         [
@@ -590,6 +665,9 @@ public class TcpDoipServerTests
                 new DiagnosticSessionControlService(state, config, eventPublisher),
                 new TesterPresentService(state),
                 new SecurityAccessService(config, state, eventPublisher),
+                new RequestDownloadService(state, config, eventPublisher),
+                new TransferDataService(state, eventPublisher),
+                new RequestTransferExitService(state, eventPublisher),
                 new ReadDataByIdentifierService(didRuntimeStore, state, eventPublisher),
                 new ReadDtcInformationService(dtcStore),
                 new ClearDiagnosticInformationService(dtcStore),
@@ -597,6 +675,22 @@ public class TcpDoipServerTests
             eventPublisher,
             config,
             state);
+    }
+
+    private static SimulatorConfig CreateFlashConfig(bool securityRequired = true)
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.TesterPresentTimeout.Enabled = false;
+        config.Uds.Flash = new FlashConfig
+        {
+            Enabled = true,
+            MaxMemorySize = 16,
+            MaxBlockLength = 4,
+            AllowedSessions = ["programming"],
+            SecurityRequired = securityRequired,
+            RequiredSecurityLevel = 1,
+        };
+        return config;
     }
 
     private static DtcRuntimeStore CreateDtcRuntimeStore(IRuntimeEventPublisher eventPublisher, bool active)

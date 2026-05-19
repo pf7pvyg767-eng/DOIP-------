@@ -85,7 +85,15 @@ public sealed class SimulatorConfig
                         LockoutMs = 1000,
                     },
                 ],
-                Flash = null,
+                Flash = new FlashConfig
+                {
+                    Enabled = false,
+                    MaxMemorySize = 4096,
+                    MaxBlockLength = 256,
+                    AllowedSessions = ["programming"],
+                    SecurityRequired = true,
+                    RequiredSecurityLevel = 1,
+                },
             },
             Tls = new TlsConfig
             {
@@ -271,7 +279,15 @@ public sealed class FlashConfig
 {
     public bool Enabled { get; set; }
 
-    public string? WorkingDirectory { get; set; }
+    public int MaxMemorySize { get; set; } = 4096;
+
+    public int MaxBlockLength { get; set; } = 256;
+
+    public List<string> AllowedSessions { get; set; } = ["programming"];
+
+    public bool SecurityRequired { get; set; } = true;
+
+    public int? RequiredSecurityLevel { get; set; } = 1;
 }
 
 public sealed class TlsConfig

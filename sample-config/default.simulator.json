@@ -94,7 +94,16 @@
         "lockoutMs": 1000
       }
     ],
-    "flash": null
+    "flash": {
+      "enabled": false,
+      "maxMemorySize": 4096,
+      "maxBlockLength": 256,
+      "allowedSessions": [
+        "programming"
+      ],
+      "securityRequired": true,
+      "requiredSecurityLevel": 1
+    }
   },
   "tls": {
     "enabled": false,
