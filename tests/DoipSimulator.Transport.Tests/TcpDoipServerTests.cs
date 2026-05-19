@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using DoipSimulator.Core.Connections;
 using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
+using DoipSimulator.Core.Faults;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Protocols.Doip;
@@ -588,6 +589,230 @@ public class TcpDoipServerTests
     }
 
     [Fact]
+    public async Task FaultResponseDelayIsObservedByClient()
+    {
+        var registry = new ConnectionRegistry();
+        var faults = new FaultRuntimeState(new FaultProfile
+        {
+            Enabled = true,
+            ResponseDelayMs = 150,
+        });
+        await using var server = CreateServer(
+            registry,
+            NullRuntimeEventPublisher.Instance,
+            new HashSet<ushort> { 0x0E80 },
+            faultRuntimeState: faults);
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        var started = DateTimeOffset.UtcNow;
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        await ReadFrameAsync(stream);
+        var elapsed = DateTimeOffset.UtcNow - started;
+
+        Assert.True(elapsed >= TimeSpan.FromMilliseconds(100));
+    }
+
+    [Fact]
+    public async Task FaultPauseResponsesCausesClientTimeoutAndResumeRestoresResponses()
+    {
+        var registry = new ConnectionRegistry();
+        var faults = new FaultRuntimeState(new FaultProfile
+        {
+            Enabled = true,
+            PauseResponses = true,
+        });
+        await using var server = CreateServer(
+            registry,
+            NullRuntimeEventPublisher.Instance,
+            new HashSet<ushort> { 0x0E80 },
+            faultRuntimeState: faults);
+        await server.StartAsync();
+
+        using (var pausedClient = new TcpClient())
+        {
+            await pausedClient.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+            await using var pausedStream = pausedClient.GetStream();
+
+            await pausedStream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+            await Assert.ThrowsAsync<TimeoutException>(async () =>
+                await ReadFrameAsync(pausedStream).WaitAsync(TimeSpan.FromMilliseconds(200)));
+        }
+
+        await faults.UpdateProfileAsync(new FaultProfile { Enabled = true });
+        using var resumedClient = new TcpClient();
+        await resumedClient.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var resumedStream = resumedClient.GetStream();
+        await resumedStream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(resumedStream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+    }
+
+    [Fact]
+    public async Task FaultManualDisconnectClosesTargetConnection()
+    {
+        var registry = new ConnectionRegistry();
+        await using var server = CreateServer(
+            registry,
+            NullRuntimeEventPublisher.Instance,
+            new HashSet<ushort> { 0x0E80 });
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await WaitUntilAsync(() => registry.GetActiveSnapshots().Count == 1);
+
+        var connectionId = Assert.Single(registry.GetActiveSnapshots()).ConnectionId;
+        Assert.True(await registry.RequestDisconnectAsync(connectionId));
+        await WaitUntilAsync(() => registry.GetActiveSnapshots().Count == 0);
+    }
+
+    [Fact]
+    public async Task FaultRoutingActivationFailureIsReproducible()
+    {
+        var registry = new ConnectionRegistry();
+        var faults = new FaultRuntimeState(new FaultProfile
+        {
+            Enabled = true,
+            RoutingActivationFailure = true,
+        });
+        await using var server = CreateServer(
+            registry,
+            NullRuntimeEventPublisher.Instance,
+            new HashSet<ushort> { 0x0E80 },
+            faultRuntimeState: faults);
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var first = await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var second = await ReadFrameAsync(stream);
+
+        Assert.Equal((byte)RoutingActivationResponseCode.DeniedUnknownSourceAddress, first.Payload[4]);
+        Assert.Equal((byte)RoutingActivationResponseCode.DeniedUnknownSourceAddress, second.Payload[4]);
+        Assert.DoesNotContain(registry.GetActiveSnapshots(), connection => connection.RoutingActivated);
+    }
+
+    [Fact]
+    public async Task FaultNextDoipHeaderCorruptionAffectsOnlyOneResponse()
+    {
+        var registry = new ConnectionRegistry();
+        var faults = new FaultRuntimeState(new FaultProfile
+        {
+            Enabled = true,
+            CorruptNextDoipHeader = new DoipHeaderFaultConfig
+            {
+                InverseVersion = true,
+                PayloadLengthDelta = 1,
+            },
+        });
+        await using var server = CreateServer(
+            registry,
+            NullRuntimeEventPublisher.Instance,
+            new HashSet<ushort> { 0x0E80 },
+            faultRuntimeState: faults);
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var first = await ReadRawFrameAsync(stream);
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var second = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipCodec.Iso13400ProtocolVersion, first.Header[0]);
+        Assert.Equal(DoipCodec.Iso13400ProtocolVersion, first.Header[1]);
+        Assert.Equal((uint)(RoutingActivationHandler.ResponsePayloadLength + 1), BinaryPrimitives.ReadUInt32BigEndian(first.Header.AsSpan(4, 4)));
+        Assert.Equal((byte)RoutingActivationResponseCode.SuccessfullyActivated, second.Payload[4]);
+    }
+
+    [Fact]
+    public async Task FaultNextNrcOverridesOnlyMatchingUdsServiceOnce()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        var faults = new FaultRuntimeState(new FaultProfile
+        {
+            Enabled = true,
+            NextNrc = new UdsFaultOverrideConfig
+            {
+                ServiceId = "0x22",
+                Nrc = "0x31",
+            },
+        });
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, faultRuntimeState: faults),
+            faultRuntimeState: faults);
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x10, 0x03]));
+        var unrelated = await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+        var overridden = await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+        var normal = await ReadFrameAsync(stream);
+
+        Assert.Equal([0x50, 0x03, 0x00, 0x32, 0x13, 0x88], unrelated.Payload[4..]);
+        Assert.Equal([0x7F, 0x22, 0x31], overridden.Payload[4..]);
+        Assert.Equal([0x62, 0xF1, 0x90, 0x4C, 0x54], normal.Payload[4..]);
+    }
+
+    [Fact]
+    public async Task FaultCustomUdsResponseOverridesMatchingServiceOnce()
+    {
+        var eventPublisher = NullRuntimeEventPublisher.Instance;
+        var registry = new ConnectionRegistry();
+        var faults = new FaultRuntimeState(new FaultProfile
+        {
+            Enabled = true,
+            NextCustomResponse = new UdsFaultOverrideConfig
+            {
+                ServiceId = "0x22",
+                ResponseBytes = "62F190CAFE",
+            },
+        });
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(eventPublisher, faultRuntimeState: faults),
+            faultRuntimeState: faults);
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+        var overridden = await ReadFrameAsync(stream);
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x90]));
+        var normal = await ReadFrameAsync(stream);
+
+        Assert.Equal([0x62, 0xF1, 0x90, 0xCA, 0xFE], overridden.Payload[4..]);
+        Assert.Equal([0x62, 0xF1, 0x90, 0x4C, 0x54], normal.Payload[4..]);
+    }
+
+    [Fact]
     public async Task DisconnectRemovesConnectionFromRegistryAndPublishesEvent()
     {
         var events = new CapturingEventSink();
@@ -656,7 +881,8 @@ public class TcpDoipServerTests
         IReadOnlySet<ushort> whitelist,
         TimeSpan? idleTimeout = null,
         IUdsDispatcher? udsDispatcher = null,
-        IPcapRecorder? pcapRecorder = null)
+        IPcapRecorder? pcapRecorder = null,
+        FaultRuntimeState? faultRuntimeState = null)
     {
         return new TcpDoipServer(
             new TcpDoipServerOptions(
@@ -669,7 +895,8 @@ public class TcpDoipServerTests
             registry,
             eventPublisher,
             udsDispatcher,
-            pcapRecorder);
+            pcapRecorder,
+            faultRuntimeState);
     }
 
     private static IUdsDispatcher CreateUdsDispatcher(
@@ -677,7 +904,8 @@ public class TcpDoipServerTests
         bool dtcActive = false,
         DtcRuntimeStore? dtcRuntimeStore = null,
         SimulatorConfig? config = null,
-        EcuRuntimeState? state = null)
+        EcuRuntimeState? state = null,
+        FaultRuntimeState? faultRuntimeState = null)
     {
         state ??= new EcuRuntimeState(0x0E00);
         config ??= SimulatorConfig.CreateDefault();
@@ -707,7 +935,8 @@ public class TcpDoipServerTests
             ],
             eventPublisher,
             config,
-            state);
+            state,
+            faultRuntimeState: faultRuntimeState);
     }
 
     private static SimulatorConfig CreateFlashConfig(bool securityRequired = true)
@@ -790,6 +1019,16 @@ public class TcpDoipServerTests
         var decoded = codec.Decode(headerBytes.Concat(payload).ToArray());
         Assert.True(decoded.IsSuccess);
         return decoded.Value!;
+    }
+
+    private static async Task<(byte[] Header, byte[] Payload)> ReadRawFrameAsync(NetworkStream stream)
+    {
+        var headerBytes = new byte[DoipCodec.HeaderLength];
+        await stream.ReadExactlyAsync(headerBytes);
+        var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(headerBytes.AsSpan(4, 4));
+        var payload = new byte[Math.Min(payloadLength, RoutingActivationHandler.ResponsePayloadLength)];
+        await stream.ReadExactlyAsync(payload);
+        return (headerBytes, payload);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)

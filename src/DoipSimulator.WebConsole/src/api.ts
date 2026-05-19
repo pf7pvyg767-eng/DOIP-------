@@ -155,6 +155,33 @@ export interface PcapRecordingStatus {
   maxBytes: number;
 }
 
+export interface FaultProfile {
+  enabled: boolean;
+  responseDelayMs: number;
+  pauseResponses: boolean;
+  routingActivationFailure: boolean;
+  corruptNextDoipHeader: {
+    inverseVersion: boolean;
+    payloadLengthDelta: number;
+  };
+  nextNrc?: {
+    serviceId: string;
+    nrc?: string | null;
+  } | null;
+  nextCustomResponse?: {
+    serviceId: string;
+    responseBytes?: string | null;
+  } | null;
+}
+
+export interface FaultRuntimeSnapshot {
+  profile: FaultProfile;
+  pauseResponses: boolean;
+  hasPendingDoipHeaderFault: boolean;
+  nextNrc?: FaultProfile["nextNrc"];
+  nextCustomResponse?: FaultProfile["nextCustomResponse"];
+}
+
 const unavailable = "Unavailable";
 
 export async function loadDashboardState(): Promise<DashboardState> {
@@ -249,6 +276,59 @@ export async function stopPcapRecording(): Promise<PcapRecordingStatus> {
   return postPcapOperation("stop");
 }
 
+export async function loadFaults(): Promise<FaultRuntimeSnapshot> {
+  return getJson<FaultRuntimeSnapshot>("/api/faults");
+}
+
+export async function updateFaultProfile(profile: FaultProfile): Promise<FaultRuntimeSnapshot> {
+  const response = await fetch("/api/faults", {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(profile),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Fault profile update failed."));
+  }
+
+  return (await response.json()) as FaultRuntimeSnapshot;
+}
+
+export async function triggerFaultDisconnect(connectionId: string): Promise<void> {
+  const response = await fetch("/api/faults/actions/disconnect", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ connectionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Manual disconnect failed."));
+  }
+}
+
+export async function configureNextNrc(serviceId: string, nrc: string): Promise<FaultRuntimeSnapshot> {
+  const response = await fetch("/api/faults/actions/next-nrc", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ serviceId, nrc }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Next NRC setup failed."));
+  }
+
+  return (await response.json()) as FaultRuntimeSnapshot;
+}
+
 export async function activateDtc(code: string, body: DtcActivateRequest): Promise<void> {
   await postDtcOperation(code, "activate", body);
 }
@@ -294,6 +374,22 @@ async function postPcapOperation(operation: "start" | "stop"): Promise<PcapRecor
   }
 
   return (await response.json()) as PcapRecordingStatus;
+}
+
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const error = (await response.json()) as {
+      message?: string;
+      errors?: { path?: string; message?: string }[];
+    };
+    if (error.errors?.length) {
+      return error.errors.map((item) => `${item.path ?? "field"}: ${item.message ?? "invalid"}`).join("; ");
+    }
+
+    return error.message ?? `${fallback} HTTP ${response.status}.`;
+  } catch {
+    return `${fallback} HTTP ${response.status}.`;
+  }
 }
 
 export function createRuntimeEventSocket(): WebSocket {

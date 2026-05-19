@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using DoipSimulator.Core.Faults;
 
 namespace DoipSimulator.Core.Configuration;
 
@@ -88,6 +89,7 @@ public static partial class ConfigValidator
         ValidateFlash(config.Uds?.Flash, errors);
         ValidateTls(config.Tls, errors);
         ValidateSecurityPlugin(config.SecurityPlugin, errors);
+        ValidateFaultProfile(config.FaultProfile, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -580,6 +582,95 @@ public static partial class ConfigValidator
             errors.Add(new ConfigValidationError(
                 "securityPlugin.dllPath",
                 "Security plugin DLL path is required when the plugin is enabled."));
+        }
+    }
+
+    public static void ValidateFaultProfile(FaultProfile? faultProfile, List<ConfigValidationError> errors)
+    {
+        if (faultProfile is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "faultProfile",
+                "Fault profile configuration is required."));
+            return;
+        }
+
+        if (faultProfile.ResponseDelayMs < 0)
+        {
+            errors.Add(new ConfigValidationError(
+                "faultProfile.responseDelayMs",
+                "Fault response delay must be zero or greater."));
+        }
+
+        if (faultProfile.CorruptNextDoipHeader is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "faultProfile.corruptNextDoipHeader",
+                "DoIP header fault configuration is required."));
+        }
+        else if (faultProfile.CorruptNextDoipHeader.PayloadLengthDelta is < -4096 or > 4096)
+        {
+            errors.Add(new ConfigValidationError(
+                "faultProfile.corruptNextDoipHeader.payloadLengthDelta",
+                "Payload length delta must be between -4096 and 4096."));
+        }
+
+        ValidateUdsOverride(
+            faultProfile.NextNrc,
+            "faultProfile.nextNrc",
+            requireNrc: true,
+            requireResponseBytes: false,
+            errors);
+        ValidateUdsOverride(
+            faultProfile.NextCustomResponse,
+            "faultProfile.nextCustomResponse",
+            requireNrc: false,
+            requireResponseBytes: true,
+            errors);
+    }
+
+    private static void ValidateUdsOverride(
+        UdsFaultOverrideConfig? overrideConfig,
+        string field,
+        bool requireNrc,
+        bool requireResponseBytes,
+        List<ConfigValidationError> errors)
+    {
+        if (overrideConfig is null)
+        {
+            return;
+        }
+
+        if (!FaultRuntimeState.TryParseByteHex(overrideConfig.ServiceId, out _))
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.serviceId",
+                "UDS service ID must be a hexadecimal byte such as 0x22."));
+        }
+
+        if (requireNrc && !FaultRuntimeState.TryParseByteHex(overrideConfig.Nrc, out _))
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.nrc",
+                "UDS NRC must be a hexadecimal byte such as 0x31."));
+        }
+
+        if (!requireResponseBytes)
+        {
+            return;
+        }
+
+        if (!FaultRuntimeState.TryParseHexBytes(overrideConfig.ResponseBytes, out var bytes))
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.responseBytes",
+                "Custom UDS response bytes must be an even-length hexadecimal byte string."));
+        }
+        else if (bytes.Length == 0)
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.responseBytes",
+                "Custom UDS response bytes must contain at least one byte."));
         }
     }
 

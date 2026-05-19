@@ -1,3 +1,5 @@
+using DoipSimulator.Core.Faults;
+
 namespace DoipSimulator.Core.Configuration;
 
 public sealed class SimulatorConfig
@@ -11,6 +13,8 @@ public sealed class SimulatorConfig
     public TlsConfig Tls { get; set; } = new();
 
     public SecurityPluginConfig SecurityPlugin { get; set; } = new();
+
+    public FaultProfile FaultProfile { get; set; } = new();
 
     public static SimulatorConfig CreateDefault()
     {
@@ -111,6 +115,7 @@ public sealed class SimulatorConfig
                 DllPath = null,
                 TimeoutMs = 500,
             },
+            FaultProfile = FaultProfile.Disabled(),
         };
     }
 }

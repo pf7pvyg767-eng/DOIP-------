@@ -321,6 +321,61 @@ p {
   gap: 10px;
 }
 
+.fault-grid,
+.fault-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.fault-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.fault-actions {
+  grid-template-columns: minmax(220px, 1fr) auto 120px 120px auto;
+  align-items: end;
+}
+
+.fault-actions--custom {
+  grid-template-columns: 140px minmax(220px, 1fr) auto;
+  margin-top: 12px;
+}
+
+.toggle-row,
+.field-row {
+  display: grid;
+  gap: 6px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.toggle-row {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  min-height: 38px;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.field-row input,
+.field-row select {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  padding: 0 10px;
+  font: inherit;
+  text-transform: none;
+}
+
 .did-list {
   display: grid;
   gap: 12px;
@@ -476,6 +531,11 @@ p {
   }
 
   .dtc-row {
+    grid-template-columns: 1fr;
+  }
+
+  .fault-grid,
+  .fault-actions {
     grid-template-columns: 1fr;
   }
 }
