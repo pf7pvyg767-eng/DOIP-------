@@ -64,6 +64,10 @@ public sealed class TcpDoipServer : IAsyncDisposable
                 new TesterPresentService(
                     state,
                     timeout: TimeSpan.FromMilliseconds(config.Uds.TesterPresentTimeout.TimeoutMs)),
+                new SecurityAccessService(config, state, eventPublisher),
+                new RequestDownloadService(state, config, eventPublisher),
+                new TransferDataService(state, eventPublisher),
+                new RequestTransferExitService(state, eventPublisher),
                 new ReadDataByIdentifierService(didRuntimeStore, eventPublisher),
                 new ReadDtcInformationService(dtcRuntimeStore),
                 new ClearDiagnosticInformationService(dtcRuntimeStore),
@@ -288,6 +292,13 @@ public sealed class TcpDoipServer : IAsyncDisposable
         }
         finally
         {
+            await udsDispatcher.NotifyConnectionClosedAsync(
+                new UdsContext(
+                    connection.ConnectionId,
+                    remoteEndpoint,
+                    connection.TesterLogicalAddress,
+                    connection.EcuLogicalAddress),
+                CancellationToken.None);
             connectionRegistry.Remove(connection.ConnectionId);
         }
     }

@@ -1,0 +1,65 @@
+{
+  "task": "task-020",
+  "status": "completed",
+  "completed": true,
+  "generatedAt": "2026-05-19T09:34:56.3165267+08:00",
+  "agent": "测试与状态智能体",
+  "worktree": "C:\\Users\\hello\\multica_workspaces_desktop-api.multica.ai\\82820572-6c1f-4353-b094-74ba05c9ec12\\6739ab32\\workdir\\DOIP-------",
+  "commit": "a17b6db Stabilize runtime startup log test",
+  "decision": "可进入 push/PR 步骤",
+  "commands": [
+    {
+      "command": "openspec validate task-020 --strict",
+      "exitCode": 0,
+      "result": "passed",
+      "notes": "Change 'task-020' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "exitCode": 0,
+      "result": "passed",
+      "notes": "构建成功，0 errors；仅有非阻塞 NU1900 包漏洞数据源访问 warning"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "exitCode": 0,
+      "result": "passed",
+      "notes": "181 passed / 0 failed / 0 skipped"
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "passed",
+      "notes": "未发现 whitespace error；仅有 Windows LF/CRLF normalization warning"
+    }
+  ],
+  "acceptance": {
+    "normalFlow_0x34_0x36N_0x37": "passed",
+    "programmingSessionNrc": "passed",
+    "securityNrc": "passed",
+    "blockSequenceNrcNoStateAdvance": "passed",
+    "disconnectCleanupWithCancelledEventEvidence": "passed",
+    "runtimeStartupLogStableAndDiagnosticOnFailure": "passed",
+    "unitCoverageForMainSessionSecurityBlockSequence": "passed",
+    "doipTcpMainPathCoverage": "passed",
+    "overall": "passed"
+  },
+  "scope": {
+    "requestUpload_0x35": "not_implemented",
+    "realFileWrite": "not_implemented",
+    "signatureVerification": "not_implemented",
+    "fullMemoryAddressMapping": "not_implemented",
+    "ecuResetAfterFlash": "not_implemented",
+    "odxPdxPcapTlsSecurityDllWebEditing": "not_implemented",
+    "complexSchedulerOrOemPolicy": "not_implemented",
+    "doipLayerFlashBusinessLogic": "not_found"
+  },
+  "nonBlockingWarnings": [
+    "NU1900: 获取包漏洞数据时访问 NuGet 源失败或 SSL 连接失败",
+    "git diff --check 输出 LF/CRLF normalization warning"
+  ],
+  "artifacts": [
+    "runs/task-020/status.json",
+    "runs/task-020/test.log"
+  ]
+}

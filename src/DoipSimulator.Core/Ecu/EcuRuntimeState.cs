@@ -26,6 +26,17 @@ public sealed record TesterPresentTimeoutResult(
     DateTimeOffset? TimeoutDeadline,
     string Reason);
 
+public sealed record FlashDownloadSnapshot(
+    bool IsActive,
+    bool IsCompleted,
+    uint MemoryAddress,
+    int TotalSize,
+    int ReceivedSize,
+    int MaxBlockLength,
+    byte ExpectedBlockSequenceCounter,
+    byte DataFormatIdentifier,
+    byte AddressAndLengthFormatIdentifier);
+
 public enum DiagnosticSession
 {
     Default = 0x01,
@@ -92,6 +103,7 @@ public sealed class EcuRuntimeState
     private string? lastTesterPresentFallbackReason;
     private DiagnosticSession? lastTesterPresentFallbackPreviousSession;
     private readonly Dictionary<int, SecurityAccessLevelState> securityLevels = [];
+    private FlashDownloadState? flashDownload;
 
     public DiagnosticSession SetSession(DiagnosticSession session)
     {
@@ -306,6 +318,119 @@ public sealed class EcuRuntimeState
         }
     }
 
+    public FlashDownloadSnapshot GetFlashDownloadSnapshot()
+    {
+        lock (gate)
+        {
+            return flashDownload?.ToSnapshot() ?? new FlashDownloadSnapshot(
+                false,
+                false,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0);
+        }
+    }
+
+    public bool TryStartFlashDownload(
+        uint memoryAddress,
+        int totalSize,
+        int maxBlockLength,
+        byte dataFormatIdentifier,
+        byte addressAndLengthFormatIdentifier)
+    {
+        lock (gate)
+        {
+            if (flashDownload?.IsActive == true)
+            {
+                return false;
+            }
+
+            flashDownload = new FlashDownloadState
+            {
+                IsActive = true,
+                IsCompleted = false,
+                MemoryAddress = memoryAddress,
+                TotalSize = totalSize,
+                ReceivedSize = 0,
+                MaxBlockLength = maxBlockLength,
+                ExpectedBlockSequenceCounter = 1,
+                DataFormatIdentifier = dataFormatIdentifier,
+                AddressAndLengthFormatIdentifier = addressAndLengthFormatIdentifier,
+            };
+
+            return true;
+        }
+    }
+
+    public FlashTransferResult AcceptFlashTransferBlock(byte blockSequenceCounter, int dataLength)
+    {
+        lock (gate)
+        {
+            if (flashDownload?.IsActive != true)
+            {
+                return FlashTransferResult.NoActiveDownload;
+            }
+
+            if (blockSequenceCounter != flashDownload.ExpectedBlockSequenceCounter)
+            {
+                return FlashTransferResult.WrongBlockSequenceCounter;
+            }
+
+            if (dataLength <= 0 || dataLength > flashDownload.MaxBlockLength)
+            {
+                return FlashTransferResult.InvalidBlockLength;
+            }
+
+            if (flashDownload.ReceivedSize + dataLength > flashDownload.TotalSize)
+            {
+                return FlashTransferResult.TotalSizeExceeded;
+            }
+
+            flashDownload.ReceivedSize += dataLength;
+            flashDownload.ExpectedBlockSequenceCounter = unchecked((byte)(flashDownload.ExpectedBlockSequenceCounter + 1));
+            return FlashTransferResult.Accepted;
+        }
+    }
+
+    public FlashTransferExitResult CompleteFlashDownload()
+    {
+        lock (gate)
+        {
+            if (flashDownload?.IsActive != true)
+            {
+                return FlashTransferExitResult.NoActiveDownload;
+            }
+
+            if (flashDownload.ReceivedSize != flashDownload.TotalSize)
+            {
+                return FlashTransferExitResult.IncompleteTransfer;
+            }
+
+            flashDownload.IsActive = false;
+            flashDownload.IsCompleted = true;
+            return FlashTransferExitResult.Completed;
+        }
+    }
+
+    public bool ClearFlashDownload()
+    {
+        lock (gate)
+        {
+            if (flashDownload is null)
+            {
+                return false;
+            }
+
+            var hadState = flashDownload.IsActive || flashDownload.IsCompleted;
+            flashDownload = null;
+            return hadState;
+        }
+    }
+
     private SecurityAccessLevelState GetOrCreateSecurityLevel(int level)
     {
         if (!securityLevels.TryGetValue(level, out var state))
@@ -355,4 +480,55 @@ public sealed class EcuRuntimeState
 
         public DateTimeOffset? LockedUntil { get; set; }
     }
+
+    private sealed class FlashDownloadState
+    {
+        public bool IsActive { get; set; }
+
+        public bool IsCompleted { get; set; }
+
+        public uint MemoryAddress { get; set; }
+
+        public int TotalSize { get; set; }
+
+        public int ReceivedSize { get; set; }
+
+        public int MaxBlockLength { get; set; }
+
+        public byte ExpectedBlockSequenceCounter { get; set; }
+
+        public byte DataFormatIdentifier { get; set; }
+
+        public byte AddressAndLengthFormatIdentifier { get; set; }
+
+        public FlashDownloadSnapshot ToSnapshot()
+        {
+            return new FlashDownloadSnapshot(
+                IsActive,
+                IsCompleted,
+                MemoryAddress,
+                TotalSize,
+                ReceivedSize,
+                MaxBlockLength,
+                ExpectedBlockSequenceCounter,
+                DataFormatIdentifier,
+                AddressAndLengthFormatIdentifier);
+        }
+    }
+}
+
+public enum FlashTransferResult
+{
+    Accepted,
+    NoActiveDownload,
+    WrongBlockSequenceCounter,
+    InvalidBlockLength,
+    TotalSizeExceeded,
+}
+
+public enum FlashTransferExitResult
+{
+    Completed,
+    NoActiveDownload,
+    IncompleteTransfer,
 }

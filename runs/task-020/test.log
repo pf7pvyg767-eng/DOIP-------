@@ -1,0 +1,64 @@
+task-020 Step 6 独立 Test & Status 复核
+时间：2026-05-19T09:34:56.3165267+08:00
+工作区：C:\Users\hello\multica_workspaces_desktop-api.multica.ai\82820572-6c1f-4353-b094-74ba05c9ec12\6739ab32\workdir\DOIP-------
+当前提交：a17b6db Stabilize runtime startup log test
+结论：completed，可进入 push/PR 步骤。
+
+执行命令：
+
+1. openspec validate task-020 --strict
+Exit code: 0
+结果：通过
+关键输出：
+Change 'task-020' is valid
+
+2. dotnet build .\DoipSimulator.sln -m:1
+Exit code: 0
+结果：通过
+摘要：
+- 构建成功。
+- 0 errors。
+- 仅有非阻塞 NU1900 warning：获取包漏洞数据时访问 NuGet 源失败或 SSL 连接失败。
+
+3. dotnet test .\DoipSimulator.sln -m:1
+Exit code: 0
+结果：通过
+项目结果：
+- DoipSimulator.Core.Tests：56 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Doip.Tests：14 passed / 0 failed / 0 skipped
+- DoipSimulator.Transport.Tests：27 passed / 0 failed / 0 skipped
+- DoipSimulator.Protocols.Uds.Tests：84 passed / 0 failed / 0 skipped
+- 总计：181 passed / 0 failed / 0 skipped
+说明：
+- `RuntimeStartupTests.HostRunWritesStartupAndStopEventsToRuntimeLog` 本轮通过，能够观察 `runtime.started`。
+- `TcpDisconnectClearsActiveFlashDownloadState` 本轮通过，能够观察下载状态清理和 `uds.flash.download.cancelled` 事件。
+
+4. git diff --check
+Exit code: 0
+结果：通过
+摘要：
+- 未发现 whitespace error。
+- 仅有 Windows LF/CRLF normalization warning。
+
+Acceptance check：
+- `0x34 -> 0x36*N -> 0x37` 正常完成：通过，已有 UDS 单元测试和 DoIP TCP 集成测试覆盖。
+- 未进入编程会话返回明确 NRC：通过，单元测试覆盖 `[0x7F, 0x34, 0x22]`。
+- 未解锁返回明确 NRC：通过，单元测试覆盖 `[0x7F, 0x34, 0x33]`。
+- 块序号错误返回 NRC，且错误请求不推进下载状态：通过，单元测试覆盖 `[0x7F, 0x36, 0x73]` 和状态不推进。
+- 中途断连后下载状态清理，并能稳定观察到 `uds.flash.download.cancelled` 事件/日志证据：通过，Transport 测试覆盖并通过。
+- `RuntimeStartupTests.HostRunWritesStartupAndStopEventsToRuntimeLog` 能稳定观察 `runtime.started`，且失败时输出 stdout / stderr / exitCode：通过，修复后的测试逻辑已覆盖该诊断输出。
+- 单元测试覆盖正常下载流程、会话异常、安全异常、块序号异常：通过。
+- DoIP TCP 集成测试覆盖完整刷写主路径：通过。
+
+Scope check：
+- 未实现 `0x35 RequestUpload`。
+- 未做真实文件写入。
+- 未做签名验签。
+- 未做完整内存地址映射。
+- 未做刷写后 ECU reset 联动。
+- 未扩展 ODX/PDX、PCAP、TLS、SecurityAccess DLL 插件或 Web 编辑能力。
+- 未引入复杂刷写调度器或 OEM 刷写策略。
+- DoIP 层只转发 UDS payload，未发现直接承载 Flash 业务逻辑。
+
+非阻塞说明：
+- 本轮未执行 `dotnet format`。按任务规则，`dotnet format` 仅允许作为带明确超时的非阻塞可选检查；超时、restore 失败或 BuildHost 卡住不得阻塞流水线。

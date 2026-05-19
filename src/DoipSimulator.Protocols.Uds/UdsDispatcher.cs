@@ -11,6 +11,10 @@ public interface IUdsDispatcher
         ReadOnlyMemory<byte> payload,
         UdsContext context,
         CancellationToken cancellationToken = default);
+
+    ValueTask NotifyConnectionClosedAsync(
+        UdsContext context,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class UdsDispatcher : IUdsDispatcher
@@ -84,6 +88,31 @@ public sealed class UdsDispatcher : IUdsDispatcher
         }
 
         return responses;
+    }
+
+    public ValueTask NotifyConnectionClosedAsync(
+        UdsContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (ecuRuntimeState is null || !ecuRuntimeState.ClearFlashDownload())
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return eventPublisher.PublishAsync(
+            RuntimeEvent.Create(
+                RuntimeEventLevel.Warning,
+                RuntimeEventCategory.Uds,
+                "uds.flash.download.cancelled",
+                "Flash download state cleared because the diagnostic connection closed.",
+                context.ConnectionId,
+                CreateEventData(context, new Dictionary<string, object?>
+                {
+                    ["outcome"] = "cancelled",
+                    ["reason"] = "connection-closed",
+                    ["active"] = false,
+                })),
+            cancellationToken);
     }
 
     private async ValueTask<IReadOnlyList<UdsResponse>> ApplyResponseDelayAsync(

@@ -298,7 +298,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, and control-service 0x31/0x28/0x85 MVP state; it does not start complex Routine scripts, flashing, TLS, PCAP, database, DLL loading, OEM security algorithms, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, and Flash download 0x34/0x36/0x37 MVP state; it does not start complex Routine scripts, real file flashing, TLS, PCAP, database, DLL loading, OEM security algorithms, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(
@@ -357,6 +357,9 @@ namespace DoipSimulator.Host
                             ecuRuntimeState,
                             timeout: TimeSpan.FromMilliseconds(config.Uds.TesterPresentTimeout.TimeoutMs)),
                         new SecurityAccessService(config, ecuRuntimeState, eventPublisher),
+                        new RequestDownloadService(ecuRuntimeState, config, eventPublisher),
+                        new TransferDataService(ecuRuntimeState, eventPublisher),
+                        new RequestTransferExitService(ecuRuntimeState, eventPublisher),
                         new ReadDataByIdentifierService(didRuntimeStore, ecuRuntimeState, eventPublisher),
                         new WriteDataByIdentifierService(didRuntimeStore, ecuRuntimeState),
                         new ReadDtcInformationService(dtcRuntimeStore),

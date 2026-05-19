@@ -85,6 +85,7 @@ public static partial class ConfigValidator
         ValidateRoutines(config.Uds?.Routines, errors);
         ValidateTiming(config.Uds, errors);
         ValidateSecurityAccess(config.Uds?.SecurityAccess, errors);
+        ValidateFlash(config.Uds?.Flash, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -466,6 +467,67 @@ public static partial class ConfigValidator
         }
     }
 
+    private static void ValidateFlash(FlashConfig? flash, List<ConfigValidationError> errors)
+    {
+        if (flash is null)
+        {
+            return;
+        }
+
+        if (flash.MaxMemorySize < 1)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.flash.maxMemorySize",
+                "Flash max memory size must be a positive byte count."));
+        }
+
+        if (flash.MaxBlockLength < 1)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.flash.maxBlockLength",
+                "Flash max block length must be a positive byte count."));
+        }
+        else if (flash.MaxMemorySize > 0 && flash.MaxBlockLength > flash.MaxMemorySize)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.flash.maxBlockLength",
+                "Flash max block length must not exceed max memory size."));
+        }
+
+        if (flash.AllowedSessions is null || flash.AllowedSessions.Count == 0)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.flash.allowedSessions",
+                "Flash allowed sessions must contain at least one valid session."));
+        }
+        else
+        {
+            for (var index = 0; index < flash.AllowedSessions.Count; index++)
+            {
+                if (!IsKnownSessionName(flash.AllowedSessions[index]))
+                {
+                    errors.Add(new ConfigValidationError(
+                        $"uds.flash.allowedSessions[{index}]",
+                        "Flash allowed session must be 'default', 'programming', or 'extended'."));
+                }
+            }
+        }
+
+        if (flash.SecurityRequired && flash.RequiredSecurityLevel is null)
+        {
+            errors.Add(new ConfigValidationError(
+                "uds.flash.requiredSecurityLevel",
+                "Flash required SecurityAccess level is required when securityRequired is true."));
+        }
+        else if (flash.SecurityRequired || flash.RequiredSecurityLevel is not null)
+        {
+            ValidateRequiredSecurityLevel(
+                flash.RequiredSecurityLevel,
+                "uds.flash.requiredSecurityLevel",
+                errors);
+        }
+    }
+
     private static void ValidateTiming(UdsConfig? uds, List<ConfigValidationError> errors)
     {
         if (uds is null)
@@ -615,6 +677,13 @@ public static partial class ConfigValidator
     {
         return string.Equals(algorithm, "builtin-xor", StringComparison.OrdinalIgnoreCase)
             || string.Equals(algorithm, "builtin-add", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsKnownSessionName(string? value)
+    {
+        return string.Equals(value, "default", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "programming", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "extended", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsEvenLengthHexBytes(string? value)
