@@ -86,6 +86,7 @@ public static partial class ConfigValidator
         ValidateTiming(config.Uds, errors);
         ValidateSecurityAccess(config.Uds?.SecurityAccess, errors);
         ValidateFlash(config.Uds?.Flash, errors);
+        ValidateTls(config.Tls, errors);
 
         return new ConfigValidationResult(errors);
     }
@@ -525,6 +526,34 @@ public static partial class ConfigValidator
                 flash.RequiredSecurityLevel,
                 "uds.flash.requiredSecurityLevel",
                 errors);
+        }
+    }
+
+    private static void ValidateTls(TlsConfig? tls, List<ConfigValidationError> errors)
+    {
+        if (tls is null)
+        {
+            errors.Add(new ConfigValidationError("tls", "TLS configuration is required."));
+            return;
+        }
+
+        if (!tls.Enabled)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(tls.ServerCertificatePath))
+        {
+            errors.Add(new ConfigValidationError(
+                "tls.serverCertificatePath",
+                "TLS server certificate path is required when TLS is enabled."));
+        }
+
+        if (tls.RequireClientCertificate && string.IsNullOrWhiteSpace(tls.ClientCaPath))
+        {
+            errors.Add(new ConfigValidationError(
+                "tls.clientCaPath",
+                "TLS client CA path is required when client certificates are required."));
         }
     }
 

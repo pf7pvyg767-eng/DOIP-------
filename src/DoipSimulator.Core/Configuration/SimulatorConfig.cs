@@ -296,6 +296,8 @@ public sealed class TlsConfig
 
     public string? ServerCertificatePath { get; set; }
 
+    public string? ServerCertificatePassword { get; set; }
+
     public string? ServerPrivateKeyPath { get; set; }
 
     public string? ClientCaPath { get; set; }

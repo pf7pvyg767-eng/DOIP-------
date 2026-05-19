@@ -1,0 +1,79 @@
+﻿{
+  "task": "task-022",
+  "status": "completed",
+  "completed_at": "2026-05-19T11:53:00+08:00",
+  "summary": "TLS 传输和证书配置独立 Test & Status 通过，可进入 push/PR 步骤。",
+  "commands": [
+    {
+      "command": "openspec validate task-022 --strict",
+      "result": "passed",
+      "notes": "Change 'task-022' is valid"
+    },
+    {
+      "command": "dotnet build .\\DoipSimulator.sln -m:1",
+      "result": "passed",
+      "notes": "0 errors；存在非阻塞 NU1900 包漏洞数据源访问 warning。"
+    },
+    {
+      "command": "dotnet test .\\DoipSimulator.sln -m:1",
+      "result": "passed",
+      "notes": "沙箱内首次因 Windows SChannel/PFX 临时证书私钥访问限制失败；按权限规则在沙箱外重跑同一命令通过，198 passed / 0 failed / 0 skipped。"
+    },
+    {
+      "command": "npm run build",
+      "working_directory": "src\\DoipSimulator.WebConsole",
+      "result": "passed",
+      "notes": "沙箱内首次因 Vite/esbuild spawn EPERM 失败；按权限规则在沙箱外重跑通过。"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed",
+      "notes": "仅有 Windows LF/CRLF normalization warning，未发现 whitespace error。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "合法客户端证书可建立 TLS 连接。",
+      "result": "passed",
+      "evidence": "TlsDoipServerTests.TrustedClientCertificateCompletesRoutingActivationAndUdsMainPathOverTls 覆盖受信客户端证书握手成功，并断言 tls.handshake.succeeded。"
+    },
+    {
+      "criterion": "TLS 下可完成 Routing Activation 和 0x10/0x22/0x3E。",
+      "result": "passed",
+      "evidence": "同一 TLS 集成测试依次发送 routing activation、0x10 DiagnosticSessionControl、0x22 ReadDataByIdentifier、0x3E TesterPresent，并验证成功响应。"
+    },
+    {
+      "criterion": "非法或缺失客户端证书连接失败，日志/事件包含原因。",
+      "result": "passed",
+      "evidence": "TlsDoipServerTests.MissingRequiredClientCertificateFailsTlsHandshakeAndPublishesReason 和 untrusted client certificate 路径覆盖 tls.handshake.failed，事件 data 包含 reason。"
+    },
+    {
+      "criterion": "Web UI 能区分 TCP 和 TLS 连接。",
+      "result": "passed",
+      "evidence": "RealtimeObservationApiTests.GetConnectionsDistinguishesTcpAndTlsTransports 覆盖 API transport 字段；RealtimeObservationPanel.vue 展示 Transport 列并显示 connection.transport.toUpperCase()；npm run build 通过。"
+    }
+  ],
+  "scope_check": [
+    {
+      "criterion": "未新增证书生成 UI。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未实现 TLS PCAP 解密或 TLS key logging。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未实现 UDS 0x84。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未引入 ODX/PDX、SecurityAccess DLL 插件或异常注入。",
+      "result": "passed"
+    },
+    {
+      "criterion": "未实现 pcapng 高级元数据或报文索引搜索。",
+      "result": "passed"
+    }
+  ],
+  "decision": "可进入 push/PR 步骤"
+}

@@ -71,6 +71,7 @@ public class UdpDoipServerTests
         Assert.True(decoded.IsSuccess);
         Assert.Equal(DoipPayloadType.VehicleAnnouncementMessage, decoded.Value!.PayloadType);
         Assert.Equal(Entity.Vin, VehicleIdentificationPayload.Decode(decoded.Value.Payload).Vin);
+        await WaitUntilAsync(() => events.Events.Any(runtimeEvent => runtimeEvent.Name == "doip.udp.vehicle_announcement.sent"));
         Assert.Contains(events.Events, runtimeEvent => runtimeEvent.Name == "doip.udp.vehicle_announcement.sent");
     }
 
@@ -128,5 +129,14 @@ public class UdpDoipServerTests
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         return directory;
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
+    {
+        using var cancellation = new CancellationTokenSource(timeout ?? TimeSpan.FromSeconds(3));
+        while (!condition())
+        {
+            await Task.Delay(50, cancellation.Token);
+        }
     }
 }

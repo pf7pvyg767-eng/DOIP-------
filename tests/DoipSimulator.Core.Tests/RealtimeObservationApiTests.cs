@@ -42,6 +42,33 @@ public class RealtimeObservationApiTests
     }
 
     [Fact]
+    public async Task GetConnectionsDistinguishesTcpAndTlsTransports()
+    {
+        var registry = new ConnectionRegistry();
+        registry.AddTcpConnection("127.0.0.1:55000", DateTimeOffset.Parse("2026-05-17T00:00:00Z"));
+        registry.AddTlsConnection("127.0.0.1:55001", DateTimeOffset.Parse("2026-05-17T00:00:01Z"));
+        await using var app = CreateApp(out var baseAddress, connectionRegistry: registry);
+
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+
+            var snapshots = await client.GetFromJsonAsync<ConnectionSnapshot[]>("/api/connections");
+
+            Assert.Collection(
+                snapshots!,
+                tcp => Assert.Equal("tcp", tcp.Transport),
+                tls => Assert.Equal("tls", tls.Transport));
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    [Fact]
     public async Task GetConnectionsReturnsEmptyArrayWhenNoConnectionsExist()
     {
         await using var app = CreateApp(out var baseAddress);
