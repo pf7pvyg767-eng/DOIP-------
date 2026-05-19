@@ -309,7 +309,7 @@ namespace DoipSimulator.Host
             writer.WriteLine("  --event-log <path>          Runtime event log path. Default: runtime-events.log beside the host assembly.");
             writer.WriteLine("  --config <path>             Simulator JSON config path. Missing file uses the validated default configuration.");
             writer.WriteLine();
-            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, optional TLS DoIP transport, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, Flash download 0x34/0x36/0x37 MVP state, and PCAP recording MVP; it does not start complex Routine scripts, real file flashing, certificate generation UI, database, DLL loading, OEM security algorithms, or external services.");
+            writer.WriteLine("The runtime starts the WebApi, UDP DoIP vehicle discovery, TCP DoIP routing activation, optional TLS DoIP transport, the UDS dispatcher, minimal session services, SecurityAccess 0x27 MVP with optional DLL seed/key plugin loading, fixed-byte DID reads/writes, DTC 0x19/0x14 MVP services, control-service 0x31/0x28/0x85 MVP state, Flash download 0x34/0x36/0x37 MVP state, and PCAP recording MVP; it does not start complex Routine scripts, real file flashing, certificate generation UI, database, OEM security algorithms, or external services.");
         }
 
         private static UdpDoipServer CreateUdpServer(

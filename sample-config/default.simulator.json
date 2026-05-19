@@ -111,5 +111,10 @@
     "serverPrivateKeyPath": null,
     "clientCaPath": null,
     "requireClientCertificate": false
+  },
+  "securityPlugin": {
+    "enabled": false,
+    "dllPath": null,
+    "timeoutMs": 500
   }
 }
