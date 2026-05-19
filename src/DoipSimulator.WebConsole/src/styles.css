@@ -116,6 +116,10 @@ p {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.facts--metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .fact {
   min-width: 0;
   border: 1px solid #e5e7eb;
@@ -348,6 +352,12 @@ p {
   color: #991b1b;
 }
 
+.inline-state--warning {
+  border-color: #f5d58c;
+  background: #fffaf0;
+  color: #854d0e;
+}
+
 .utility-button,
 .primary-button {
   min-height: 38px;
@@ -574,6 +584,7 @@ p {
   .facts--three,
   .facts--config,
   .facts--ecu,
+  .facts--metrics,
   .facts--pcap {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -609,6 +620,7 @@ p {
   .facts--three,
   .facts--config,
   .facts--ecu,
+  .facts--metrics,
   .facts--pcap {
     grid-template-columns: 1fr;
   }

@@ -7,6 +7,7 @@ using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.Faults;
 using DoipSimulator.Core.Observability.Logging;
+using DoipSimulator.Core.Observability.Metrics;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using DoipSimulator.Host;
@@ -183,17 +184,18 @@ namespace DoipSimulator.Host
                 var logPath = options.ResolveEventLogPath();
                 await using var eventSink = new FileRuntimeEventSink(logPath);
                 var eventHub = new RuntimeEventHub();
-                var eventPublisher = new RuntimeEventBus([eventSink, eventHub]);
+                var connectionRegistry = new ConnectionRegistry();
+                var metricsCollector = new RuntimeMetricsCollector(connectionRegistry, eventHub);
+                var eventPublisher = new RuntimeEventBus([metricsCollector, eventSink, eventHub]);
                 var configPath = options.ResolveConfigPath();
                 var configStore = new ConfigStore(eventPublisher);
                 var config = await configStore.LoadAsync(configPath, shutdown.Token);
                 var didRuntimeStore = new DidRuntimeStore(config, configPath, configStore, eventPublisher);
                 var dtcRuntimeStore = new DtcRuntimeStore(config, eventPublisher);
                 var controlServiceStateStore = new ControlServiceStateStore(config, eventPublisher);
-                var connectionRegistry = new ConnectionRegistry();
                 var ecuRuntimeState = new EcuRuntimeState(TcpDoipServer.ParseLogicalAddress(config.Entity.LogicalAddress));
                 var faultRuntimeState = new FaultRuntimeState(config.FaultProfile, eventPublisher);
-                await using var pcapRecorder = new PcapRecorder(eventPublisher: eventPublisher);
+                await using var pcapRecorder = new PcapRecorder(eventPublisher: eventPublisher, metricsSink: metricsCollector);
                 await using var udpServer = CreateUdpServer(config, eventPublisher, pcapRecorder);
                 await using var tcpServer = CreateTcpServer(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, pcapRecorder, faultRuntimeState);
                 await using var tlsServer = await CreateTlsServerAsync(config, eventPublisher, connectionRegistry, ecuRuntimeState, didRuntimeStore, dtcRuntimeStore, controlServiceStateStore, faultRuntimeState, shutdown.Token);
@@ -210,6 +212,7 @@ namespace DoipSimulator.Host
                     dtcRuntimeStore: dtcRuntimeStore,
                     controlServiceStateStore: controlServiceStateStore,
                     pcapRecorder: pcapRecorder,
+                    metricsCollector: metricsCollector,
                     faultRuntimeState: faultRuntimeState);
 
                 await app.StartAsync(shutdown.Token);

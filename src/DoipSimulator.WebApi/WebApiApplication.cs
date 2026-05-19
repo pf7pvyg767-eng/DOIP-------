@@ -5,6 +5,7 @@ using DoipSimulator.Core.Configuration;
 using DoipSimulator.Core.Ecu;
 using DoipSimulator.Core.Faults;
 using DoipSimulator.Core.Odx;
+using DoipSimulator.Core.Observability.Metrics;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 
@@ -67,6 +68,7 @@ public static class WebApiApplication
         DtcRuntimeStore? dtcRuntimeStore = null,
         ControlServiceStateStore? controlServiceStateStore = null,
         IPcapRecorder? pcapRecorder = null,
+        RuntimeMetricsCollector? metricsCollector = null,
         FaultRuntimeState? faultRuntimeState = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
@@ -94,6 +96,7 @@ public static class WebApiApplication
             initialConfig,
             eventPublisher);
         var pcap = pcapRecorder ?? NullPcapRecorder.Instance;
+        var metrics = metricsCollector ?? new RuntimeMetricsCollector(connections, eventHub);
 
         app.UseWebSockets();
 
@@ -132,6 +135,8 @@ public static class WebApiApplication
                 cancellationToken));
 
         app.MapGet("/api/connections", () => Results.Ok(connections.GetActiveSnapshots()));
+
+        app.MapGet("/api/metrics", () => Results.Ok(metrics.GetSnapshot(pcap)));
 
         app.MapGet("/api/faults", () => Results.Ok(faults.GetSnapshot()));
 

@@ -133,5 +133,18 @@ public sealed class ConnectionRegistry
         }
     }
 
+    public int ActiveCount
+    {
+        get
+        {
+            lock (gate)
+            {
+                return connections.Count;
+            }
+        }
+    }
+
+    public long TotalAccepted => Interlocked.Read(ref nextConnectionNumber);
+
     public static string FormatLogicalAddress(ushort logicalAddress) => $"0x{logicalAddress:X4}";
 }
