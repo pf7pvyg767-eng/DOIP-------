@@ -36,6 +36,34 @@ export interface DashboardState {
   config: ConfigSummary;
 }
 
+export interface RuntimeMetricsSnapshot {
+  collectedAt: string;
+  connections: {
+    active: number;
+    totalAccepted: number;
+  };
+  throughput: {
+    udsRequestsPerSecond: number;
+  };
+  queues: {
+    event: QueueMetric;
+    pcap: QueueMetric;
+  };
+  writeRates: {
+    logEntriesPerSecond: number;
+    pcapBytesPerSecond: number;
+  };
+  memory: {
+    workingSetBytes: number;
+    managedHeapBytes: number;
+  };
+}
+
+export interface QueueMetric {
+  length?: number | null;
+  state: string;
+}
+
 export type RuntimeEventLevel = "info" | "warning" | "error";
 
 export type RuntimeEventCategory =
@@ -241,6 +269,10 @@ export async function loadRecentEvents(limit = 200, category = ""): Promise<Runt
 
 export async function loadConnections(): Promise<ConnectionSnapshot[]> {
   return getJson<ConnectionSnapshot[]>("/api/connections");
+}
+
+export async function loadRuntimeMetrics(): Promise<RuntimeMetricsSnapshot> {
+  return getJson<RuntimeMetricsSnapshot>("/api/metrics");
 }
 
 export async function loadEcuState(): Promise<EcuStateSnapshot> {

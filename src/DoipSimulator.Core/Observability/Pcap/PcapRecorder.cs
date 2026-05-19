@@ -1,4 +1,5 @@
 using DoipSimulator.Core.RuntimeEvents;
+using DoipSimulator.Core.Observability.Metrics;
 
 namespace DoipSimulator.Core.Observability.Pcap;
 
@@ -9,6 +10,7 @@ public sealed class PcapRecorder : IPcapRecorder, IAsyncDisposable
     private readonly string outputDirectory;
     private readonly long maxBytes;
     private readonly IRuntimeEventPublisher eventPublisher;
+    private readonly IPcapMetricsSink? metricsSink;
     private readonly SemaphoreSlim gate = new(1, 1);
     private PcapWriter? writer;
     private string? filePath;
@@ -17,13 +19,15 @@ public sealed class PcapRecorder : IPcapRecorder, IAsyncDisposable
     public PcapRecorder(
         string? outputDirectory = null,
         long maxBytes = DefaultMaxBytes,
-        IRuntimeEventPublisher? eventPublisher = null)
+        IRuntimeEventPublisher? eventPublisher = null,
+        IPcapMetricsSink? metricsSink = null)
     {
         this.outputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
             ? Path.Combine(AppContext.BaseDirectory, "logs", "pcap")
             : outputDirectory;
         this.maxBytes = maxBytes;
         this.eventPublisher = eventPublisher ?? NullRuntimeEventPublisher.Instance;
+        this.metricsSink = metricsSink;
     }
 
     public PcapRecordingStatus GetStatus()
@@ -101,6 +105,7 @@ public sealed class PcapRecorder : IPcapRecorder, IAsyncDisposable
 
             await writer.WritePacketAsync(packet, cancellationToken);
             bytesWritten = writer.BytesWritten;
+            metricsSink?.RecordPcapWrite(recordLength, packet.Timestamp);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {

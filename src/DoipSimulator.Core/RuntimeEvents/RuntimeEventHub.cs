@@ -26,6 +26,17 @@ public sealed class RuntimeEventHub : IRuntimeEventSink
 
     public int Capacity => capacity;
 
+    public int RecentCount
+    {
+        get
+        {
+            lock (gate)
+            {
+                return recentEvents.Count;
+            }
+        }
+    }
+
     public ValueTask WriteAsync(RuntimeEvent runtimeEvent, CancellationToken cancellationToken = default)
     {
         Channel<RuntimeEvent>[] currentSubscribers;

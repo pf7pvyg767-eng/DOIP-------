@@ -7,6 +7,7 @@ import DtcInjectionPanel from "../components/DtcInjectionPanel.vue";
 import EventLogPanel from "../components/EventLogPanel.vue";
 import FaultInjectionPanel from "../components/FaultInjectionPanel.vue";
 import ImportPanel from "../components/ImportPanel.vue";
+import MetricsPanel from "../components/MetricsPanel.vue";
 import PcapRecordingPanel from "../components/PcapRecordingPanel.vue";
 import RealtimeObservationPanel from "../components/RealtimeObservationPanel.vue";
 import StatusPanel from "../components/StatusPanel.vue";
@@ -58,6 +59,8 @@ async function load(): Promise<void> {
       <StatusPanel :health="state.health" />
 
       <RealtimeObservationPanel />
+
+      <MetricsPanel />
 
       <DidEditorPanel />
 
