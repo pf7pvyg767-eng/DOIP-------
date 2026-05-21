@@ -9,6 +9,7 @@
 
   <PropertyGroup>
     <AssemblyName>doip-simulator</AssemblyName>
+    <ApplicationIcon>assets\doip-simulator.ico</ApplicationIcon>
     <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

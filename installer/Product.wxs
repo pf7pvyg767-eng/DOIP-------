@@ -1,0 +1,69 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:fire="http://wixtoolset.org/schemas/v4/wxs/firewall">
+  <Package
+    Name="DOIP Simulator"
+    Manufacturer="DOIP Simulator"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="{8C0D80A7-B3C1-4B1D-A908-1D72474215D5}"
+    Scope="perMachine">
+    <SummaryInformation Description="DOIP Simulator installer" Manufacturer="DOIP Simulator" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of DOIP Simulator is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon.ico" SourceFile="$(var.SourceRoot)\src\DoipSimulator.Host\assets\doip-simulator.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <Feature Id="MainFeature" Title="DOIP Simulator" Level="1">
+      <ComponentGroupRef Id="PublishedFiles" />
+      <ComponentRef Id="ApplicationShortcutComponent" />
+      <ComponentRef Id="FirewallRulesComponent" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="DOIP Simulator" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="DOIP Simulator" />
+    </StandardDirectory>
+
+    <Component Id="ApplicationShortcutComponent" Directory="ApplicationProgramsFolder" Guid="{26BE5D11-5992-4AE8-9F9F-F9D4522F8029}">
+      <Shortcut
+        Id="StartMenuShortcut"
+        Name="DOIP Simulator"
+        Description="Start the DOIP Simulator Web Console"
+        Target="[INSTALLFOLDER]Start-DOIP-Simulator.cmd"
+        WorkingDirectory="INSTALLFOLDER"
+        Icon="AppIcon.ico" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\DOIP Simulator" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="FirewallRulesComponent" Directory="INSTALLFOLDER" Guid="{99D1B06A-1DFA-4C81-BB48-610233234263}">
+      <fire:FirewallException
+        Id="DoipSimulatorDoipTcpFirewallRule"
+        Name="DOIP Simulator - DoIP TCP"
+        Description="Allows external diagnostic tools to connect to DOIP Simulator over DoIP TCP."
+        Port="13400"
+        Protocol="tcp"
+        Scope="any"
+        Profile="all" />
+      <fire:FirewallException
+        Id="DoipSimulatorDoipUdpFirewallRule"
+        Name="DOIP Simulator - DoIP UDP"
+        Description="Allows external diagnostic tools to discover DOIP Simulator over DoIP UDP."
+        Port="13400"
+        Protocol="udp"
+        Scope="any"
+        Profile="all" />
+      <fire:FirewallException
+        Id="DoipSimulatorDoipTlsFirewallRule"
+        Name="DOIP Simulator - DoIP TLS"
+        Description="Allows external diagnostic tools to connect to DOIP Simulator over DoIP TLS when TLS is enabled."
+        Port="3496"
+        Protocol="tcp"
+        Scope="any"
+        Profile="all" />
+      <RegistryValue Root="HKLM" Key="Software\DOIP Simulator" Name="FirewallRules" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

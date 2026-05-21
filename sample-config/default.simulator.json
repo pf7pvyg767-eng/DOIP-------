@@ -33,6 +33,95 @@
           "extended"
         ],
         "requiredSecurityState": null
+      },
+      {
+        "identifier": "0xF191",
+        "name": "Dynamic sine battery voltage mV",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "sine",
+          "numericType": "uint16",
+          "amplitude": 120,
+          "offset": 12500,
+          "periodMs": 8000
+        }
+      },
+      {
+        "identifier": "0xF192",
+        "name": "Dynamic random temperature",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "random",
+          "numericType": "uint8",
+          "min": 20,
+          "max": 90,
+          "seed": 20260521
+        }
+      },
+      {
+        "identifier": "0xF193",
+        "name": "Dynamic sine rpm",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "sine",
+          "numericType": "uint16",
+          "amplitude": 800,
+          "offset": 1800,
+          "periodMs": 5000
+        }
+      },
+      {
+        "identifier": "0xF194",
+        "name": "Dynamic linear vehicle speed",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "linear",
+          "numericType": "uint16",
+          "offset": 0,
+          "slopePerSecond": 1.5
+        }
+      },
+      {
+        "identifier": "0xF195",
+        "name": "Dynamic sine steering angle",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "sine",
+          "numericType": "int16",
+          "amplitude": 450,
+          "offset": 0,
+          "periodMs": 7000
+        }
+      },
+      {
+        "identifier": "0xF196",
+        "name": "Dynamic linear odometer",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "linear",
+          "numericType": "uint32",
+          "offset": 120000,
+          "slopePerSecond": 0.2
+        }
+      },
+      {
+        "identifier": "0xF197",
+        "name": "Dynamic random fuel level",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "random",
+          "numericType": "uint8",
+          "min": 35,
+          "max": 80,
+          "seed": 20260522
+        }
       }
     ],
     "dtcs": [

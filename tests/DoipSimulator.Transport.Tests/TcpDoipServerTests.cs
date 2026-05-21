@@ -242,7 +242,64 @@ public class TcpDoipServerTests
             runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
                 runtimeEvent.Name == "uds.did.read" &&
                 runtimeEvent.Data!["did"]?.Equals("0xF190") == true &&
-            runtimeEvent.Data!["responseLength"]?.Equals(4) == true);
+                runtimeEvent.Data!["responseLength"]?.Equals(4) == true);
+    }
+
+    [Fact]
+    public async Task ReadDynamicDidAfterRoutingActivationReturnsGeneratedValue()
+    {
+        var events = new CapturingEventSink();
+        var eventPublisher = new RuntimeEventBus([events]);
+        var registry = new ConnectionRegistry();
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
+            new DidConfig
+            {
+                Identifier = "0xF192",
+                Name = "Dynamic",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "random",
+                    NumericType = "uint8",
+                    Min = 10,
+                    Max = 20,
+                    Seed = 9,
+                },
+            },
+        ];
+        await using var server = CreateServer(
+            registry,
+            eventPublisher,
+            new HashSet<ushort> { 0x0E80 },
+            udsDispatcher: CreateUdsDispatcher(
+                eventPublisher,
+                config: config,
+                preserveConfiguredDids: true));
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.BoundPort);
+        await using var stream = client.GetStream();
+
+        await stream.WriteAsync(CreateRoutingActivationFrame(0x0E80));
+        var activationResponse = await ReadFrameAsync(stream);
+        Assert.Equal(DoipPayloadType.RoutingActivationResponse, activationResponse.PayloadType);
+
+        await stream.WriteAsync(CreateDiagnosticMessageFrame(0x0E80, 0x0E00, [0x22, 0xF1, 0x92]));
+        var diagnosticResponse = await ReadFrameAsync(stream);
+
+        Assert.Equal(DoipPayloadType.DiagnosticMessage, diagnosticResponse.PayloadType);
+        Assert.Equal(0x0E00, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(0, 2)));
+        Assert.Equal(0x0E80, BinaryPrimitives.ReadUInt16BigEndian(diagnosticResponse.Payload.AsSpan(2, 2)));
+        Assert.Equal([0x62, 0xF1, 0x92], diagnosticResponse.Payload[4..7]);
+        Assert.InRange(diagnosticResponse.Payload[7], 10, 20);
+        Assert.Contains(
+            events.Events,
+            runtimeEvent => runtimeEvent.Category == RuntimeEventCategory.Uds &&
+                runtimeEvent.Name == "uds.did.read" &&
+                runtimeEvent.Data!["did"]?.Equals("0xF192") == true &&
+                runtimeEvent.Data!["responseLength"]?.Equals(3) == true);
     }
 
     [Fact]
@@ -905,20 +962,24 @@ public class TcpDoipServerTests
         DtcRuntimeStore? dtcRuntimeStore = null,
         SimulatorConfig? config = null,
         EcuRuntimeState? state = null,
-        FaultRuntimeState? faultRuntimeState = null)
+        FaultRuntimeState? faultRuntimeState = null,
+        bool preserveConfiguredDids = false)
     {
         state ??= new EcuRuntimeState(0x0E00);
         config ??= SimulatorConfig.CreateDefault();
-        config.Uds.Dids =
-        [
-            new DidConfig
-            {
-                Identifier = "0xF190",
-                Name = "VIN",
-                ValueEncoding = "hex",
-                Value = "4C54",
-            },
-        ];
+        if (!preserveConfiguredDids)
+        {
+            config.Uds.Dids =
+            [
+                new DidConfig
+                {
+                    Identifier = "0xF190",
+                    Name = "VIN",
+                    ValueEncoding = "hex",
+                    Value = "4C54",
+                },
+            ];
+        }
         var didRuntimeStore = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
         var dtcStore = dtcRuntimeStore ?? CreateDtcRuntimeStore(eventPublisher, dtcActive);
         return new UdsDispatcher(

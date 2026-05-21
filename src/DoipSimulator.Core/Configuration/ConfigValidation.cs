@@ -211,19 +211,7 @@ public static partial class ConfigValidator
                     "DID identifier must be a hexadecimal value from 0x0000 through 0xFFFF."));
             }
 
-            if (!string.Equals(did.ValueEncoding, "hex", StringComparison.OrdinalIgnoreCase))
-            {
-                errors.Add(new ConfigValidationError(
-                    $"uds.dids[{index}].valueEncoding",
-                    "DID value encoding must be 'hex'."));
-            }
-
-            if (!IsEvenLengthHexBytes(did.Value))
-            {
-                errors.Add(new ConfigValidationError(
-                    $"uds.dids[{index}].value",
-                    "DID fixed value must be an even-length hexadecimal byte string."));
-            }
+            ValidateDidValueProvider(did, index, errors);
 
             if (did.WriteLength is < 1)
             {
@@ -236,6 +224,183 @@ public static partial class ConfigValidator
                 did.RequiredSecurityLevel,
                 $"uds.dids[{index}].requiredSecurityLevel",
                 errors);
+        }
+    }
+
+    public static bool IsStaticDid(DidConfig did)
+    {
+        var providerType = did.ValueProvider?.Type;
+        return string.IsNullOrWhiteSpace(providerType)
+            || string.Equals(providerType, "static", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool TryParseDidNumericType(string? value, out DidNumericType numericType)
+    {
+        numericType = default;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "uint8" => SetNumericType(DidNumericType.UInt8, out numericType),
+            "uint16" => SetNumericType(DidNumericType.UInt16, out numericType),
+            "int16" => SetNumericType(DidNumericType.Int16, out numericType),
+            "uint32" => SetNumericType(DidNumericType.UInt32, out numericType),
+            "int32" => SetNumericType(DidNumericType.Int32, out numericType),
+            _ => false,
+        };
+    }
+
+    public static int GetDidNumericTypeByteLength(DidNumericType numericType)
+    {
+        return numericType switch
+        {
+            DidNumericType.UInt8 => 1,
+            DidNumericType.UInt16 or DidNumericType.Int16 => 2,
+            DidNumericType.UInt32 or DidNumericType.Int32 => 4,
+            _ => throw new ArgumentOutOfRangeException(nameof(numericType)),
+        };
+    }
+
+    public static (double Min, double Max) GetDidNumericTypeRange(DidNumericType numericType)
+    {
+        return numericType switch
+        {
+            DidNumericType.UInt8 => (byte.MinValue, byte.MaxValue),
+            DidNumericType.UInt16 => (ushort.MinValue, ushort.MaxValue),
+            DidNumericType.Int16 => (short.MinValue, short.MaxValue),
+            DidNumericType.UInt32 => (uint.MinValue, uint.MaxValue),
+            DidNumericType.Int32 => (int.MinValue, int.MaxValue),
+            _ => throw new ArgumentOutOfRangeException(nameof(numericType)),
+        };
+    }
+
+    private static bool SetNumericType(DidNumericType value, out DidNumericType numericType)
+    {
+        numericType = value;
+        return true;
+    }
+
+    private static void ValidateDidValueProvider(DidConfig did, int index, List<ConfigValidationError> errors)
+    {
+        var field = $"uds.dids[{index}]";
+        var provider = did.ValueProvider;
+        var providerType = provider?.Type;
+        var effectiveType = string.IsNullOrWhiteSpace(providerType) ? "static" : providerType;
+
+        if (string.Equals(effectiveType, "static", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(did.ValueEncoding, "hex", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"{field}.valueEncoding",
+                    "DID value encoding must be 'hex'."));
+            }
+
+            if (!IsEvenLengthHexBytes(did.Value))
+            {
+                errors.Add(new ConfigValidationError(
+                    $"{field}.value",
+                    "DID fixed value must be an even-length hexadecimal byte string."));
+            }
+
+            return;
+        }
+
+        if (provider is null)
+        {
+            return;
+        }
+
+        if (did.Writable)
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.writable",
+                "Dynamic provider DIDs are read-only in this phase."));
+        }
+
+        if (!TryParseDidNumericType(provider.NumericType, out var numericType))
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.valueProvider.numericType",
+                "DID value provider numericType must be one of uint8, uint16, int16, uint32, or int32."));
+            return;
+        }
+
+        if (string.Equals(effectiveType, "random", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateRequiredNumber(provider.Min, $"{field}.valueProvider.min", errors);
+            ValidateRequiredNumber(provider.Max, $"{field}.valueProvider.max", errors);
+            if (provider.Min is { } min && provider.Max is { } max)
+            {
+                if (min > max)
+                {
+                    errors.Add(new ConfigValidationError(
+                        $"{field}.valueProvider.max",
+                        "Random DID value provider max must be greater than or equal to min."));
+                }
+
+                ValidateDidProviderRange(min, max, numericType, field, errors);
+            }
+
+            return;
+        }
+
+        if (string.Equals(effectiveType, "sine", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateRequiredNumber(provider.Amplitude, $"{field}.valueProvider.amplitude", errors);
+            ValidateRequiredNumber(provider.Offset, $"{field}.valueProvider.offset", errors);
+            if (provider.PeriodMs is null or <= 0)
+            {
+                errors.Add(new ConfigValidationError(
+                    $"{field}.valueProvider.periodMs",
+                    "Sine DID value provider periodMs must be greater than zero."));
+            }
+
+            if (provider.Amplitude is { } amplitude && provider.Offset is { } offset)
+            {
+                var absoluteAmplitude = Math.Abs(amplitude);
+                ValidateDidProviderRange(offset - absoluteAmplitude, offset + absoluteAmplitude, numericType, field, errors);
+            }
+
+            return;
+        }
+
+        if (string.Equals(effectiveType, "linear", StringComparison.OrdinalIgnoreCase))
+        {
+            ValidateRequiredNumber(provider.Offset, $"{field}.valueProvider.offset", errors);
+            ValidateRequiredNumber(provider.SlopePerSecond, $"{field}.valueProvider.slopePerSecond", errors);
+            return;
+        }
+
+        errors.Add(new ConfigValidationError(
+            $"{field}.valueProvider.type",
+            "DID value provider type must be static, random, sine, or linear."));
+    }
+
+    private static void ValidateRequiredNumber(double? value, string field, List<ConfigValidationError> errors)
+    {
+        if (value is null || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
+        {
+            errors.Add(new ConfigValidationError(field, "DID value provider numeric field is required."));
+        }
+    }
+
+    private static void ValidateDidProviderRange(
+        double min,
+        double max,
+        DidNumericType numericType,
+        string field,
+        List<ConfigValidationError> errors)
+    {
+        var range = GetDidNumericTypeRange(numericType);
+        if (min < range.Min || max > range.Max)
+        {
+            errors.Add(new ConfigValidationError(
+                $"{field}.valueProvider.numericType",
+                "DID value provider range must fit in the selected numericType."));
         }
     }
 
