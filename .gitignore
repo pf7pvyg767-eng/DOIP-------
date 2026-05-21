@@ -3,6 +3,9 @@ bin/
 obj/
 TestResults/
 artifacts/
+.wix/
+installer/obj/
+installer/bin/
 *.user
 *.suo
 *.rsuser
@@ -27,4 +30,5 @@ Thumbs.db
 *.log
 *.tmp
 *.lscache
+runs/local-dev/*.simulator.json
 .superpowers/

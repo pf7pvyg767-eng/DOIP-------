@@ -102,8 +102,8 @@ function Read-DoipFrame {
     param([System.IO.Stream]$Stream)
 
     $header = Read-Exact -Stream $Stream -Length 8
-    $payloadType = [UInt16](($header[2] -shl 8) -bor $header[3])
-    $length = [UInt32](($header[4] -shl 24) -bor ($header[5] -shl 16) -bor ($header[6] -shl 8) -bor $header[7])
+    $payloadType = [UInt16](([int]$header[2] -shl 8) -bor [int]$header[3])
+    $length = [UInt32](([int]$header[4] -shl 24) -bor ([int]$header[5] -shl 16) -bor ([int]$header[6] -shl 8) -bor [int]$header[7])
     if ($length -gt 1048576) {
         throw "Unexpected DoIP payload length $length."
     }
@@ -140,7 +140,7 @@ function Invoke-DoipUdpDiscovery {
         if ($response.Length -lt 8) {
             throw "Short UDP response."
         }
-        $payloadType = [UInt16](($response[2] -shl 8) -bor $response[3])
+        $payloadType = [UInt16](([int]$response[2] -shl 8) -bor [int]$response[3])
         if ($payloadType -ne 0x0004) {
             throw ("Expected vehicle announcement 0x0004, got 0x{0:X4}." -f $payloadType)
         }

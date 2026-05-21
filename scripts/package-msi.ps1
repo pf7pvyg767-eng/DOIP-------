@@ -1,213 +1,271 @@
 param(
-    [string]$Version = "0.1.0",
+    [string]$Configuration = "Release",
     [string]$RuntimeIdentifier = "win-x64",
-    [switch]$SkipFrontendBuild,
-    [switch]$AcceptWixEula
+    [string]$ProductVersion = "0.2.0",
+    [string]$WixVersion = "6.0.2",
+    [switch]$SkipTests
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$frontendRoot = Join-Path $repoRoot "src\DoipSimulator.WebConsole"
-$hostProject = Join-Path $repoRoot "src\DoipSimulator.Host\DoipSimulator.Host.csproj"
-$artifactsRoot = Join-Path $repoRoot "artifacts"
-$publishRoot = Join-Path $artifactsRoot "publish\doip-simulator-$Version-$RuntimeIdentifier"
-$installerRoot = Join-Path $artifactsRoot "installer"
-$wxsPath = Join-Path $installerRoot "DoipSimulator-$Version.wxs"
-$msiPath = Join-Path $installerRoot "DoipSimulator-$Version-$RuntimeIdentifier.msi"
-$webDist = Join-Path $frontendRoot "dist"
-$webRoot = Join-Path $publishRoot "wwwroot"
-
-function Convert-ToWixId {
-    param([string]$Value)
-    $id = [Regex]::Replace($Value, "[^A-Za-z0-9_\.]", "_")
-    if ($id -notmatch "^[A-Za-z_]") {
-        $id = "id_$id"
-    }
-
-    if ($id.Length -gt 70) {
-        $hash = [Math]::Abs($Value.GetHashCode()).ToString("X")
-        $id = $id.Substring(0, 60) + "_" + $hash
-    }
-
-    return $id
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$dotnet = Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"
+if (-not (Test-Path -LiteralPath $dotnet)) {
+    $dotnet = "dotnet"
+}
+else {
+    $env:DOTNET_ROOT = Split-Path -Parent $dotnet
 }
 
-function Convert-ToXmlAttribute {
+function Assert-UnderRoot {
+    param([string]$Path)
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not $fullPath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to operate outside workspace: $fullPath"
+    }
+
+    return $fullPath
+}
+
+function Reset-Directory {
+    param([string]$Path)
+
+    $fullPath = Assert-UnderRoot $Path
+    if (Test-Path -LiteralPath $fullPath) {
+        Remove-Item -LiteralPath $fullPath -Recurse -Force
+    }
+
+    New-Item -ItemType Directory -Force -Path $fullPath | Out-Null
+    return $fullPath
+}
+
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList
+    )
+
+    & $FilePath @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
+    }
+}
+
+function Get-WixInvocation {
+    param([string]$ToolDirectory)
+
+    $wixDll = Get-ChildItem -LiteralPath $ToolDirectory -Recurse -Filter "wix.dll" |
+        Sort-Object FullName |
+        Select-Object -First 1
+    if ($wixDll) {
+        return [pscustomobject]@{
+            FilePath = $dotnet
+            Prefix = @($wixDll.FullName)
+        }
+    }
+
+    return [pscustomobject]@{
+        FilePath = Join-Path $ToolDirectory "wix.exe"
+        Prefix = @()
+    }
+}
+
+function ConvertTo-WixId {
+    param([string]$Value)
+
+    $sha1 = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        $hash = $sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Value))
+    }
+    finally {
+        $sha1.Dispose()
+    }
+    $suffix = -join ($hash[0..7] | ForEach-Object { $_.ToString("X2") })
+    $clean = [Regex]::Replace($Value, "[^A-Za-z0-9_]", "_")
+    if ($clean.Length -gt 40) {
+        $clean = $clean.Substring(0, 40)
+    }
+
+    if ($clean -notmatch "^[A-Za-z_]") {
+        $clean = "_$clean"
+    }
+
+    return "${clean}_$suffix"
+}
+
+function ConvertTo-XmlAttribute {
     param([string]$Value)
     return [System.Security.SecurityElement]::Escape($Value)
 }
 
-function Get-RelativePath {
+function Write-DirectoryWix {
     param(
-        [string]$BasePath,
-        [string]$TargetPath
+        [System.Text.StringBuilder]$Builder,
+        [string]$DirectoryPath,
+        [string]$RelativePath,
+        [System.Collections.Generic.List[string]]$ComponentIds,
+        [int]$Depth = 2
     )
 
-    $baseFull = (Resolve-Path -LiteralPath $BasePath).ProviderPath.TrimEnd("\") + "\"
-    $targetFull = (Resolve-Path -LiteralPath $TargetPath).ProviderPath
-    $baseUri = [Uri]$baseFull
-    $targetUri = [Uri]$targetFull
-    return [Uri]::UnescapeDataString($baseUri.MakeRelativeUri($targetUri).ToString()).Replace("/", "\")
-}
+    $indent = "  " * $Depth
+    foreach ($file in Get-ChildItem -LiteralPath $DirectoryPath -File | Sort-Object Name) {
+        $fileRelativePath = if ($RelativePath) { Join-Path $RelativePath $file.Name } else { $file.Name }
+        $componentId = "cmp_$(ConvertTo-WixId $fileRelativePath)"
+        $fileId = "fil_$(ConvertTo-WixId $fileRelativePath)"
+        $source = ConvertTo-XmlAttribute $file.FullName
+        [void]$Builder.AppendLine("$indent<Component Id=`"$componentId`" Guid=`"*`">")
+        [void]$Builder.AppendLine("$indent  <File Id=`"$fileId`" Source=`"$source`" KeyPath=`"yes`" />")
+        [void]$Builder.AppendLine("$indent</Component>")
+        $ComponentIds.Add($componentId)
+    }
 
-function Invoke-NativeCommand {
-    param(
-        [string]$FilePath,
-        [string[]]$Arguments
-    )
-
-    & $FilePath @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "$FilePath exited with code $LASTEXITCODE"
+    foreach ($directory in Get-ChildItem -LiteralPath $DirectoryPath -Directory | Sort-Object Name) {
+        $directoryRelativePath = if ($RelativePath) { Join-Path $RelativePath $directory.Name } else { $directory.Name }
+        $directoryId = "dir_$(ConvertTo-WixId $directoryRelativePath)"
+        $directoryName = ConvertTo-XmlAttribute $directory.Name
+        [void]$Builder.AppendLine("$indent<Directory Id=`"$directoryId`" Name=`"$directoryName`">")
+        Write-DirectoryWix -Builder $Builder -DirectoryPath $directory.FullName -RelativePath $directoryRelativePath -ComponentIds $ComponentIds -Depth ($Depth + 1)
+        [void]$Builder.AppendLine("$indent</Directory>")
     }
 }
 
-Write-Host "Packaging DOIP Simulator $Version for $RuntimeIdentifier"
+function Copy-DotnetRuntime {
+    param([string]$Destination)
 
-New-Item -ItemType Directory -Force -Path $artifactsRoot, $installerRoot | Out-Null
+    $sourceRoot = Split-Path -Parent $dotnet
+    $runtimeVersion = (& $dotnet --list-runtimes |
+        Select-String -Pattern "^Microsoft\.NETCore\.App\s+([0-9.]+)\s+" |
+        ForEach-Object { $_.Matches[0].Groups[1].Value } |
+        Select-Object -First 1)
+    $aspNetVersion = (& $dotnet --list-runtimes |
+        Select-String -Pattern "^Microsoft\.AspNetCore\.App\s+([0-9.]+)\s+" |
+        ForEach-Object { $_.Matches[0].Groups[1].Value } |
+        Select-Object -First 1)
 
-if (-not $SkipFrontendBuild) {
-    Push-Location $frontendRoot
+    if ([string]::IsNullOrWhiteSpace($runtimeVersion) -or [string]::IsNullOrWhiteSpace($aspNetVersion)) {
+        throw "Could not locate local .NET runtime versions to bundle."
+    }
+
+    $destinationFullPath = Assert-UnderRoot $Destination
+    New-Item -ItemType Directory -Force -Path $destinationFullPath | Out-Null
+
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "dotnet.exe") -Destination (Join-Path $destinationFullPath "dotnet.exe") -Force
+    foreach ($notice in @("LICENSE.txt", "ThirdPartyNotices.txt")) {
+        $noticePath = Join-Path $sourceRoot $notice
+        if (Test-Path -LiteralPath $noticePath) {
+            Copy-Item -LiteralPath $noticePath -Destination (Join-Path $destinationFullPath $notice) -Force
+        }
+    }
+
+    $fxrSource = Join-Path $sourceRoot "host\fxr\$runtimeVersion"
+    $netCoreSource = Join-Path $sourceRoot "shared\Microsoft.NETCore.App\$runtimeVersion"
+    $aspNetSource = Join-Path $sourceRoot "shared\Microsoft.AspNetCore.App\$aspNetVersion"
+
+    New-Item -ItemType Directory -Force -Path (Join-Path $destinationFullPath "host\fxr") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $destinationFullPath "shared\Microsoft.NETCore.App") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $destinationFullPath "shared\Microsoft.AspNetCore.App") | Out-Null
+
+    Copy-Item -LiteralPath $fxrSource -Destination (Join-Path $destinationFullPath "host\fxr\$runtimeVersion") -Recurse -Force
+    Copy-Item -LiteralPath $netCoreSource -Destination (Join-Path $destinationFullPath "shared\Microsoft.NETCore.App\$runtimeVersion") -Recurse -Force
+    Copy-Item -LiteralPath $aspNetSource -Destination (Join-Path $destinationFullPath "shared\Microsoft.AspNetCore.App\$aspNetVersion") -Recurse -Force
+}
+
+Push-Location $root
+try {
+    $artifactsRoot = Join-Path $root "artifacts\installer"
+    $publishDir = Reset-Directory (Join-Path $artifactsRoot "publish")
+    $msiDir = Reset-Directory (Join-Path $artifactsRoot "msi")
+    $wixWorkDir = Reset-Directory (Join-Path $artifactsRoot "wix")
+    $wixToolDir = Join-Path $artifactsRoot "tools\wix-$WixVersion"
+
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $root "scripts\generate-app-icon.ps1") -OutputPath (Join-Path $root "src\DoipSimulator.Host\assets\doip-simulator.ico")
+
+    Push-Location (Join-Path $root "src\DoipSimulator.WebConsole")
     try {
-        Invoke-NativeCommand "npm" @("run", "build")
+        if (Test-Path -LiteralPath "package-lock.json") {
+            npm.cmd ci
+        } else {
+            npm.cmd install
+        }
+
+        npm.cmd run build
     }
     finally {
         Pop-Location
     }
-}
 
-if (-not (Test-Path (Join-Path $webDist "index.html"))) {
-    throw "Frontend dist is missing. Run npm run build first or remove -SkipFrontendBuild."
-}
-
-if (Test-Path $publishRoot) {
-    Remove-Item -LiteralPath $publishRoot -Recurse -Force
-}
-
-Invoke-NativeCommand "dotnet" @(
-    "publish",
-    $hostProject,
-    "-c",
-    "Release",
-    "-r",
-    $RuntimeIdentifier,
-    "--self-contained",
-    "true",
-    "-p:PublishSingleFile=false",
-    "-p:Version=$Version",
-    "-p:AssemblyVersion=$Version",
-    "-p:FileVersion=$Version",
-    "-o",
-    $publishRoot
-)
-
-New-Item -ItemType Directory -Force -Path $webRoot | Out-Null
-Copy-Item -Path (Join-Path $webDist "*") -Destination $webRoot -Recurse -Force
-
-$exePath = Join-Path $publishRoot "doip-simulator.exe"
-if (-not (Test-Path $exePath)) {
-    throw "Published executable not found: $exePath"
-}
-
-$allDirectories = Get-ChildItem -LiteralPath $publishRoot -Directory -Recurse | Sort-Object FullName
-$directoryIds = @{
-    (Resolve-Path $publishRoot).Path = "INSTALLFOLDER"
-}
-
-foreach ($directory in $allDirectories) {
-    $relative = Get-RelativePath $publishRoot $directory.FullName
-    $directoryIds[$directory.FullName] = Convert-ToWixId "dir_$relative"
-}
-
-$directoryChildren = @{}
-foreach ($directory in $allDirectories) {
-    $parent = Split-Path $directory.FullName -Parent
-    if (-not $directoryChildren.ContainsKey($parent)) {
-        $directoryChildren[$parent] = New-Object System.Collections.Generic.List[object]
+    if (-not $SkipTests) {
+        & $dotnet test (Join-Path $root "DoipSimulator.sln") --no-restore
     }
 
-    $directoryChildren[$parent].Add($directory)
-}
+    & $dotnet publish (Join-Path $root "src\DoipSimulator.Host\DoipSimulator.Host.csproj") `
+        -c $Configuration `
+        -r $RuntimeIdentifier `
+        --self-contained false `
+        -p:UseAppHost=false `
+        -p:DebugType=None `
+        -p:DebugSymbols=false `
+        -o $publishDir
 
-function Write-WixDirectory {
-    param(
-        [System.Text.StringBuilder]$Builder,
-        [string]$Path,
-        [int]$Indent
-    )
+    Copy-DotnetRuntime (Join-Path $publishDir "dotnet")
+    Copy-Item -LiteralPath (Join-Path $root "src\DoipSimulator.WebConsole\dist") -Destination (Join-Path $publishDir "wwwroot") -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $root "sample-config\default.simulator.json") -Destination (Join-Path $publishDir "simulator-config.json") -Force
+    Copy-Item -LiteralPath (Join-Path $root "installer\Start-DOIP-Simulator.ps1") -Destination (Join-Path $publishDir "Start-DOIP-Simulator.ps1") -Force
+    Copy-Item -LiteralPath (Join-Path $root "installer\Start-DOIP-Simulator.cmd") -Destination (Join-Path $publishDir "Start-DOIP-Simulator.cmd") -Force
 
-    if (-not $directoryChildren.ContainsKey($Path)) {
-        return
+    if (-not (Test-Path -LiteralPath (Join-Path $wixToolDir "wix.exe"))) {
+        New-Item -ItemType Directory -Force -Path $wixToolDir | Out-Null
+        Invoke-Native $dotnet @("tool", "install", "wix", "--tool-path", $wixToolDir, "--version", $WixVersion)
     }
 
-    $pad = " " * $Indent
-    foreach ($child in $directoryChildren[$Path]) {
-        $id = $directoryIds[$child.FullName]
-        $name = Convert-ToXmlAttribute $child.Name
-        [void]$Builder.AppendLine("$pad<Directory Id=`"$id`" Name=`"$name`">")
-        Write-WixDirectory -Builder $Builder -Path $child.FullName -Indent ($Indent + 2)
-        [void]$Builder.AppendLine("$pad</Directory>")
+    $wixInvocation = Get-WixInvocation $wixToolDir
+    $installedExtensions = & $wixInvocation.FilePath @(@($wixInvocation.Prefix) + "extension", "list")
+
+    if (($installedExtensions | Out-String) -notmatch "WixToolset\.Firewall\.wixext") {
+        Invoke-Native $wixInvocation.FilePath @(@($wixInvocation.Prefix) + "extension", "add", "WixToolset.Firewall.wixext/$WixVersion")
     }
+
+    $componentIds = [System.Collections.Generic.List[string]]::new()
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.AppendLine('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">')
+    [void]$builder.AppendLine('  <Fragment>')
+    [void]$builder.AppendLine('    <DirectoryRef Id="INSTALLFOLDER">')
+    Write-DirectoryWix -Builder $builder -DirectoryPath $publishDir -RelativePath "" -ComponentIds $componentIds -Depth 3
+    [void]$builder.AppendLine('    </DirectoryRef>')
+    [void]$builder.AppendLine('  </Fragment>')
+    [void]$builder.AppendLine('  <Fragment>')
+    [void]$builder.AppendLine('    <ComponentGroup Id="PublishedFiles">')
+    foreach ($componentId in $componentIds) {
+        [void]$builder.AppendLine("      <ComponentRef Id=`"$componentId`" />")
+    }
+    [void]$builder.AppendLine('    </ComponentGroup>')
+    [void]$builder.AppendLine('  </Fragment>')
+    [void]$builder.AppendLine('</Wix>')
+
+    $generatedFilesWxs = Join-Path $wixWorkDir "PublishedFiles.wxs"
+    Set-Content -Path $generatedFilesWxs -Value $builder.ToString() -Encoding UTF8
+
+    $msiPath = Join-Path $msiDir "DOIP-Simulator-$ProductVersion-$RuntimeIdentifier.msi"
+    Invoke-Native $wixInvocation.FilePath @(
+        @($wixInvocation.Prefix) +
+        "build",
+        (Join-Path $root "installer\Product.wxs"),
+        $generatedFilesWxs,
+        "-ext",
+        "WixToolset.Firewall.wixext",
+        "-arch",
+        "x64",
+        "-d",
+        "SourceRoot=$root",
+        "-d",
+        "ProductVersion=$ProductVersion",
+        "-out",
+        $msiPath)
+
+    Write-Output "MSI_CREATED=$msiPath"
 }
-
-$directoryXml = [System.Text.StringBuilder]::new()
-Write-WixDirectory -Builder $directoryXml -Path (Resolve-Path $publishRoot).Path -Indent 10
-
-$componentXml = [System.Text.StringBuilder]::new()
-$componentRefsXml = [System.Text.StringBuilder]::new()
-$index = 0
-foreach ($file in Get-ChildItem -LiteralPath $publishRoot -File -Recurse | Sort-Object FullName) {
-    $index++
-    $relative = Get-RelativePath $publishRoot $file.FullName
-    $componentId = Convert-ToWixId "cmp_$index`_$relative"
-    $fileId = Convert-ToWixId "fil_$index`_$relative"
-    $source = Convert-ToXmlAttribute $file.FullName
-    $directoryId = $directoryIds[(Split-Path $file.FullName -Parent)]
-    [void]$componentXml.AppendLine("      <Component Id=`"$componentId`" Directory=`"$directoryId`" Guid=`"*`">")
-    [void]$componentXml.AppendLine("        <File Id=`"$fileId`" Source=`"$source`" KeyPath=`"yes`" />")
-    [void]$componentXml.AppendLine("      </Component>")
-    [void]$componentRefsXml.AppendLine("      <ComponentRef Id=`"$componentId`" />")
+finally {
+    Pop-Location
 }
-
-$upgradeCode = "aaf5f278-81ab-4ab9-9d88-7efe113d8f21"
-$wxs = @"
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="DOIP Simulator" Manufacturer="DOIP Simulator" Version="$Version" UpgradeCode="$upgradeCode" Scope="perUser">
-    <MajorUpgrade DowngradeErrorMessage="A newer version of DOIP Simulator is already installed." />
-    <MediaTemplate EmbedCab="yes" />
-
-    <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="INSTALLFOLDER" Name="DOIP Simulator">
-$directoryXml      </Directory>
-    </StandardDirectory>
-
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="DOIP Simulator" />
-    </StandardDirectory>
-
-    <Component Id="StartMenuShortcutComponent" Directory="ApplicationProgramsFolder" Guid="0e77f8d1-1e57-447b-bb5f-09e63a9a94d7">
-      <Shortcut Id="StartMenuShortcut" Name="DOIP Simulator" Target="[INSTALLFOLDER]doip-simulator.exe" Arguments="run" WorkingDirectory="INSTALLFOLDER" />
-      <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
-      <RegistryValue Root="HKCU" Key="Software\DOIP Simulator" Name="installed" Type="integer" Value="1" KeyPath="yes" />
-    </Component>
-
-    <Feature Id="MainFeature" Title="DOIP Simulator" Level="1">
-      <ComponentRef Id="StartMenuShortcutComponent" />
-$componentRefsXml    </Feature>
-
-$componentXml  </Package>
-</Wix>
-"@
-
-Set-Content -LiteralPath $wxsPath -Encoding UTF8 -Value $wxs
-
-if ($AcceptWixEula) {
-    Invoke-NativeCommand "wix" @("eula", "accept", "wix7")
-}
-
-Invoke-NativeCommand "wix" @("build", $wxsPath, "-arch", "x64", "-o", $msiPath)
-
-Write-Host "MSI created: $msiPath"
-Write-Host "After installation, run 'DOIP Simulator' from the Start Menu and open http://127.0.0.1:5080/"

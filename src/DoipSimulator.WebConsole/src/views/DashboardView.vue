@@ -19,8 +19,7 @@ import {
   type RuntimeSummaryResponse,
 } from "../api";
 import ControlServicesPanel from "../components/ControlServicesPanel.vue";
-import DidEditorPanel from "../components/DidEditorPanel.vue";
-import DidLiveChartPanel from "../components/DidLiveChartPanel.vue";
+import DidDataPanel from "../components/DidDataPanel.vue";
 import DtcInjectionPanel from "../components/DtcInjectionPanel.vue";
 import EventLogPanel from "../components/EventLogPanel.vue";
 import FaultInjectionPanel from "../components/FaultInjectionPanel.vue";
@@ -592,8 +591,7 @@ function deriveRuntimePhase(): { label: string; detail: string; state: string } 
           <RealtimeObservationPanel v-else-if="activeWorkspace === 'diagnostics'" />
 
           <div v-else-if="activeWorkspace === 'data'" class="workspace-stack">
-            <DidEditorPanel />
-            <DidLiveChartPanel />
+            <DidDataPanel />
             <DtcInjectionPanel />
             <ControlServicesPanel />
           </div>

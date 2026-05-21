@@ -55,6 +55,16 @@ npm run build
 .\scripts\run-host.ps1 run
 ```
 
+## MSI packaging
+
+To build an install-ready Windows MSI with the Web Console, default simulator configuration, bundled .NET runtime, Start Menu shortcut, application icon, and DoIP firewall rules:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-msi.ps1
+```
+
+The package is written to `artifacts\installer\msi`. The installed shortcut starts the simulator with the bundled `simulator-config.json` and opens `http://127.0.0.1:5080`. The MSI installs Windows Firewall rules for DoIP TCP/UDP `13400` and DoIP TLS TCP `3496`; the Web Console remains bound to local loopback by default.
+
 ## Phase 2 functional smoke
 
 Start the Host with a disposable development configuration, then run:
@@ -72,6 +82,21 @@ For the runtime cockpit UI smoke:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\web-console-runtime-cockpit-smoke.ps1
 ```
+
+To drive DID live charts from a diagnostic-style DoIP loop, start the Host and Web Console, then run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\did-continuous-read.ps1
+```
+
+The default loop reads the dynamic sample DIDs `0xF191` through `0xF197` every 500 ms for 120 seconds. Use `-DurationSeconds 0` to run until Ctrl+C.
+Use `-DoipPort <port>` when the simulator is running on a non-default DoIP TCP port. For the live second development instance used during dynamic DID work:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\did-continuous-read.ps1 -DoipPort 13401 -DurationSeconds 0
+```
+
+The script preflights the matching Web API (`13400` -> `5080`, `13401` -> `5081`) and stops early with a clear message when the requested DIDs are not configured on that runtime. Pass `-ApiBaseUrl <url>` for a custom API endpoint or `-SkipApiPreflight` for raw DoIP-only testing. For a second Web Console instance, set `VITE_API_PROXY_TARGET` before starting Vite, for example `http://127.0.0.1:5081`.
 
 ## Scope note
 
