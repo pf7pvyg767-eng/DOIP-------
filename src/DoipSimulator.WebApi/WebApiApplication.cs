@@ -8,6 +8,8 @@ using DoipSimulator.Core.Odx;
 using DoipSimulator.Core.Observability.Metrics;
 using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace DoipSimulator.WebApi;
 
@@ -99,6 +101,7 @@ public static class WebApiApplication
         var metrics = metricsCollector ?? new RuntimeMetricsCollector(connections, eventHub);
 
         app.UseWebSockets();
+        UseWebConsoleStaticFiles(app);
 
         app.MapGet("/api/health", () =>
             Results.Ok(new HealthResponse(
@@ -460,7 +463,84 @@ public static class WebApiApplication
             }
         });
 
+        MapWebConsoleRoutes(app);
+
         return app;
+    }
+
+    private static void UseWebConsoleStaticFiles(WebApplication app)
+    {
+        var webRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        if (!Directory.Exists(webRoot))
+        {
+            return;
+        }
+
+        var fileProvider = new PhysicalFileProvider(webRoot);
+        app.UseDefaultFiles(new DefaultFilesOptions
+        {
+            FileProvider = fileProvider,
+        });
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = fileProvider,
+        });
+    }
+
+    private static void MapWebConsoleRoutes(WebApplication app)
+    {
+        app.MapGet("/", () => ServeWebConsoleFile(null));
+        app.MapGet("/{**webPath}", (HttpContext context, string? webPath) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                return Results.NotFound();
+            }
+
+            return ServeWebConsoleFile(webPath);
+        });
+    }
+
+    private static IResult ServeWebConsoleFile(string? webPath)
+    {
+        var webRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "wwwroot"));
+        if (!Directory.Exists(webRoot))
+        {
+            return Results.NotFound();
+        }
+
+        var relativePath = string.IsNullOrWhiteSpace(webPath)
+            ? "index.html"
+            : webPath.Replace('/', Path.DirectorySeparatorChar);
+
+        if (Path.IsPathRooted(relativePath) ||
+            relativePath.Split(Path.DirectorySeparatorChar).Any(part => part == ".."))
+        {
+            return Results.BadRequest();
+        }
+
+        var filePath = Path.GetFullPath(Path.Combine(webRoot, relativePath));
+        if (!filePath.StartsWith(webRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest();
+        }
+
+        if (!File.Exists(filePath))
+        {
+            filePath = Path.Combine(webRoot, "index.html");
+        }
+
+        if (!File.Exists(filePath))
+        {
+            return Results.NotFound();
+        }
+
+        var contentTypeProvider = new FileExtensionContentTypeProvider();
+        return Results.File(
+            filePath,
+            contentTypeProvider.TryGetContentType(filePath, out var contentType)
+                ? contentType
+                : "application/octet-stream");
     }
 
     private static async Task WatchClientDisconnectAsync(

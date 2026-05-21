@@ -17,6 +17,7 @@ public sealed class PcapWriter : IAsyncDisposable
     private const byte TcpProtocol = 6;
     private const byte UdpProtocol = 17;
     private readonly FileStream stream;
+    private readonly Dictionary<TcpDirectionKey, uint> tcpNextSequenceNumbers = [];
     private bool disposed;
 
     public PcapWriter(string filePath)
@@ -30,7 +31,7 @@ public sealed class PcapWriter : IAsyncDisposable
 
     public int GetRecordLength(PcapPacket packet)
     {
-        return PacketHeaderLength + BuildIpPacket(packet).Length;
+        return PacketHeaderLength + GetIpPacketLength(packet);
     }
 
     public async ValueTask WritePacketAsync(PcapPacket packet, CancellationToken cancellationToken = default)
@@ -77,7 +78,17 @@ public sealed class PcapWriter : IAsyncDisposable
         stream.Flush();
     }
 
-    private static byte[] BuildIpPacket(PcapPacket packet)
+    private static int GetIpPacketLength(PcapPacket packet)
+    {
+        return packet.Transport switch
+        {
+            PcapTransport.Udp => 20 + 8 + packet.Payload.Length,
+            PcapTransport.Tcp => 20 + 20 + packet.Payload.Length,
+            _ => throw new ArgumentOutOfRangeException(nameof(packet), "Unsupported pcap transport."),
+        };
+    }
+
+    private byte[] BuildIpPacket(PcapPacket packet)
     {
         return packet.Transport switch
         {
@@ -100,7 +111,7 @@ public sealed class PcapWriter : IAsyncDisposable
         return bytes;
     }
 
-    private static byte[] BuildTcpIpPacket(PcapPacket packet)
+    private byte[] BuildTcpIpPacket(PcapPacket packet)
     {
         var payload = packet.Payload;
         var totalLength = 20 + 20 + payload.Length;
@@ -108,11 +119,35 @@ public sealed class PcapWriter : IAsyncDisposable
         WriteIpv4Header(bytes.AsSpan(0, 20), packet, TcpProtocol, totalLength);
         BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(20, 2), GetSourcePort(packet));
         BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(22, 2), GetDestinationPort(packet));
+        var sequence = GetTcpSequenceNumbers(packet);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(24, 4), sequence.SequenceNumber);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(28, 4), sequence.AcknowledgementNumber);
         bytes[32] = 0x50;
         bytes[33] = 0x18;
         BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(34, 2), 8192);
         payload.CopyTo(bytes.AsSpan(40));
         return bytes;
+    }
+
+    private TcpSequenceNumbers GetTcpSequenceNumbers(PcapPacket packet)
+    {
+        var source = new TcpEndpointKey(GetSourceAddress(packet).ToString(), GetSourcePort(packet));
+        var destination = new TcpEndpointKey(GetDestinationAddress(packet).ToString(), GetDestinationPort(packet));
+        var direction = new TcpDirectionKey(source, destination);
+        var reverseDirection = new TcpDirectionKey(destination, source);
+
+        if (!tcpNextSequenceNumbers.TryGetValue(direction, out var sequenceNumber))
+        {
+            sequenceNumber = 1;
+        }
+
+        if (!tcpNextSequenceNumbers.TryGetValue(reverseDirection, out var acknowledgementNumber))
+        {
+            acknowledgementNumber = 1;
+        }
+
+        tcpNextSequenceNumbers[direction] = sequenceNumber + checked((uint)packet.Payload.Length);
+        return new TcpSequenceNumbers(sequenceNumber, acknowledgementNumber);
     }
 
     private static void WriteIpv4Header(Span<byte> header, PcapPacket packet, byte protocol, int totalLength)
@@ -176,4 +211,10 @@ public sealed class PcapWriter : IAsyncDisposable
             ? address
             : IPAddress.Loopback;
     }
+
+    private readonly record struct TcpEndpointKey(string Address, ushort Port);
+
+    private readonly record struct TcpDirectionKey(TcpEndpointKey Source, TcpEndpointKey Destination);
+
+    private readonly record struct TcpSequenceNumbers(uint SequenceNumber, uint AcknowledgementNumber);
 }

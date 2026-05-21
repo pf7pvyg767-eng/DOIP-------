@@ -67,6 +67,48 @@ public class PcapRecordingTests
     }
 
     [Fact]
+    public async Task PcapWriterAssignsTcpSequenceAndAckNumbersPerConversation()
+    {
+        var filePath = CreateTempPath("tcp-sequence.pcap");
+        var local = new IPEndPoint(IPAddress.Loopback, 13400);
+        var remote = new IPEndPoint(IPAddress.Loopback, 55000);
+
+        await using (var writer = new PcapWriter(filePath))
+        {
+            await writer.WritePacketAsync(new PcapPacket(
+                PcapTransport.Tcp,
+                PcapPacketDirection.Inbound,
+                local,
+                remote,
+                [0x02, 0xFD, 0x00, 0x05],
+                DateTimeOffset.UtcNow));
+            await writer.WritePacketAsync(new PcapPacket(
+                PcapTransport.Tcp,
+                PcapPacketDirection.Outbound,
+                local,
+                remote,
+                [0x02, 0xFD, 0x00, 0x06, 0x10],
+                DateTimeOffset.UtcNow));
+            await writer.WritePacketAsync(new PcapPacket(
+                PcapTransport.Tcp,
+                PcapPacketDirection.Inbound,
+                local,
+                remote,
+                [0x02, 0xFD, 0x80, 0x01],
+                DateTimeOffset.UtcNow));
+        }
+
+        var bytes = await File.ReadAllBytesAsync(filePath);
+        var firstPacketOffset = PcapWriter.GlobalHeaderLength + PcapWriter.PacketHeaderLength;
+        var secondPacketOffset = firstPacketOffset + 40 + 4 + PcapWriter.PacketHeaderLength;
+        var thirdPacketOffset = secondPacketOffset + 40 + 5 + PcapWriter.PacketHeaderLength;
+
+        AssertTcpSequence(bytes, firstPacketOffset, sequenceNumber: 1, acknowledgementNumber: 1);
+        AssertTcpSequence(bytes, secondPacketOffset, sequenceNumber: 1, acknowledgementNumber: 5);
+        AssertTcpSequence(bytes, thirdPacketOffset, sequenceNumber: 5, acknowledgementNumber: 6);
+    }
+
+    [Fact]
     public async Task PcapRecorderLifecyclePublishesStartStopAndKeepsStatus()
     {
         var events = new RecordingRuntimeEventPublisher();
@@ -179,6 +221,16 @@ public class PcapRecordingTests
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    private static void AssertTcpSequence(
+        byte[] bytes,
+        int ipPacketOffset,
+        uint sequenceNumber,
+        uint acknowledgementNumber)
+    {
+        Assert.Equal(sequenceNumber, BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(ipPacketOffset + 24, 4)));
+        Assert.Equal(acknowledgementNumber, BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(ipPacketOffset + 28, 4)));
     }
 
     private sealed class RecordingRuntimeEventPublisher : IRuntimeEventPublisher

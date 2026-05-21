@@ -5,7 +5,10 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
-      "/api": "http://127.0.0.1:5080",
+      "/api": {
+        target: "http://127.0.0.1:5080",
+        ws: true,
+      },
     },
   },
 });

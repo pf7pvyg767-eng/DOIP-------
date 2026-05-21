@@ -4,6 +4,7 @@ import {
   createRuntimeEventSocket,
   loadConnections,
   loadEcuState,
+  loadRecentEvents,
   type ConnectionSnapshot,
   type EcuStateSnapshot,
   type RuntimeEvent,
@@ -17,6 +18,12 @@ interface TraceRow {
   name: string;
   summary: string;
 }
+
+const props = withDefaults(defineProps<{
+  compact?: boolean;
+}>(), {
+  compact: false,
+});
 
 const maxTraceRows = 500;
 const reconnectDelayMs = 2000;
@@ -55,6 +62,10 @@ const filteredConnections = computed(() => {
 
 const filteredDoipRows = computed(() => filterRows(doipRows.value));
 const filteredUdsRows = computed(() => filterRows(udsRows.value));
+const railDoipRows = computed(() => doipRows.value.slice(0, 10));
+const railUdsRows = computed(() => udsRows.value.slice(0, 10));
+const activeConnections = computed(() => connections.value.filter((connection) => connection.state !== "closed"));
+const headingId = computed(() => props.compact ? "observation-rail-title" : "observation-title");
 
 onMounted(async () => {
   await refreshSnapshots();
@@ -73,9 +84,14 @@ onBeforeUnmount(() => {
 async function refreshSnapshots(): Promise<void> {
   errorMessage.value = "";
   try {
-    const [connectionSnapshot, ecuSnapshot] = await Promise.all([loadConnections(), loadEcuState()]);
+    const [connectionSnapshot, ecuSnapshot, recentEvents] = await Promise.all([
+      loadConnections(),
+      loadEcuState(),
+      loadRecentEvents(),
+    ]);
     connections.value = connectionSnapshot;
     ecuState.value = ecuSnapshot;
+    recentEvents.forEach(applyRuntimeEvent);
   } catch {
     errorMessage.value = "Observation snapshots could not be loaded.";
   }
@@ -288,11 +304,15 @@ function formatFallbackStatus(state: EcuStateSnapshot | null): string {
 </script>
 
 <template>
-  <section class="section observation" aria-labelledby="observation-title">
+  <section
+    class="section observation"
+    :class="{ 'observation--rail': props.compact }"
+    :aria-labelledby="headingId"
+  >
     <div class="section__heading section__heading--row">
       <div>
         <p class="eyebrow">Diagnostics</p>
-        <h2 id="observation-title">Realtime observation</h2>
+        <h2 :id="headingId">{{ props.compact ? "Realtime rail" : "Realtime observation" }}</h2>
       </div>
       <span class="connection-pill" :data-state="streamState">{{ streamState }}</span>
     </div>
@@ -326,6 +346,54 @@ function formatFallbackStatus(state: EcuStateSnapshot | null): string {
       </div>
     </div>
 
+    <template v-if="props.compact">
+      <div class="rail-summary">
+        <div>
+          <span>Active connections</span>
+          <strong>{{ activeConnections.length }}</strong>
+        </div>
+        <div>
+          <span>DoIP frames</span>
+          <strong>{{ doipRows.length }}</strong>
+        </div>
+        <div>
+          <span>UDS messages</span>
+          <strong>{{ udsRows.length }}</strong>
+        </div>
+      </div>
+
+      <div class="rail-block">
+        <h3>DoIP</h3>
+        <p v-if="railDoipRows.length === 0" class="inline-state">No DoIP frames yet.</p>
+        <div v-else class="rail-feed">
+          <article v-for="row in railDoipRows" :key="row.id">
+            <header>
+              <span>{{ formatTimestamp(row.timestamp) }}</span>
+              <b>{{ row.direction }}</b>
+            </header>
+            <strong>{{ row.name }}</strong>
+            <p>{{ row.summary }}</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="rail-block">
+        <h3>UDS</h3>
+        <p v-if="railUdsRows.length === 0" class="inline-state">No UDS messages yet.</p>
+        <div v-else class="rail-feed">
+          <article v-for="row in railUdsRows" :key="row.id">
+            <header>
+              <span>{{ formatTimestamp(row.timestamp) }}</span>
+              <b>{{ row.direction }}</b>
+            </header>
+            <strong>{{ row.name }}</strong>
+            <p>{{ row.summary }}</p>
+          </article>
+        </div>
+      </div>
+    </template>
+
+    <template v-else>
     <div class="filters observation__filters" aria-label="Observation filters">
       <label>
         Connection
@@ -415,5 +483,6 @@ function formatFallbackStatus(state: EcuStateSnapshot | null): string {
         </div>
       </div>
     </div>
+    </template>
   </section>
 </template>
