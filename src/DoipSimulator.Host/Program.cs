@@ -213,7 +213,8 @@ namespace DoipSimulator.Host
                     controlServiceStateStore: controlServiceStateStore,
                     pcapRecorder: pcapRecorder,
                     metricsCollector: metricsCollector,
-                    faultRuntimeState: faultRuntimeState);
+                    faultRuntimeState: faultRuntimeState,
+                    runtimeShutdownSignal: new CancellationTokenSourceRuntimeShutdownSignal(shutdown));
 
                 await app.StartAsync(shutdown.Token);
                 await udpServer.StartAsync(shutdown.Token);

@@ -1,0 +1,26 @@
+﻿const { chromium } = require("playwright");
+const { execFileSync } = require("child_process");
+const path = require("path");
+(async () => {
+  const root = process.env.PHASE2_ROOT;
+  console.log("opening browser");
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  console.log("opening page");
+  await page.goto("http://127.0.0.1:5173", { waitUntil: "networkidle" });
+  console.log("checking connection guide");
+  const guide = page.getByLabel("Connect diagnostic tester");
+  await page.getByText("Connect diagnostic tester").waitFor({ timeout: 15000 });
+  await page.getByText("Waiting for DoIP Discovery").waitFor({ timeout: 15000 });
+  await guide.getByText("LTEST000000000001").waitFor({ timeout: 15000 });
+  await guide.getByText("0x0E00").waitFor({ timeout: 15000 });
+  await guide.getByText("0x0E80").waitFor({ timeout: 15000 });
+  await page.screenshot({ path: path.join(root, "runs", "phase2-runtime-status-smoke", "connection-guide-before.png"), fullPage: true });
+  console.log("running DoIP/UDS smoke");
+  execFileSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "runs", "local-dev", "doip-uds-smoke-temp.ps1")], { stdio: "inherit" });
+  console.log("checking phase update");
+  await page.getByText("UDS Traffic Active").waitFor({ timeout: 15000 });
+  await page.screenshot({ path: path.join(root, "runs", "phase2-runtime-status-smoke", "connection-guide-after-uds.png"), fullPage: true });
+  await browser.close();
+  console.log("PHASE2_VISUAL_UI_CHECK_PASS");
+})().catch(error => { console.error(error); process.exit(1); });

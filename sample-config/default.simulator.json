@@ -33,6 +33,32 @@
           "extended"
         ],
         "requiredSecurityState": null
+      },
+      {
+        "identifier": "0xF192",
+        "name": "Dynamic random temperature",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "random",
+          "numericType": "uint8",
+          "min": 20,
+          "max": 90,
+          "seed": 20260521
+        }
+      },
+      {
+        "identifier": "0xF193",
+        "name": "Dynamic sine rpm",
+        "valueEncoding": "hex",
+        "writable": false,
+        "valueProvider": {
+          "type": "sine",
+          "numericType": "uint16",
+          "amplitude": 800,
+          "offset": 1800,
+          "periodMs": 5000
+        }
       }
     ],
     "dtcs": [

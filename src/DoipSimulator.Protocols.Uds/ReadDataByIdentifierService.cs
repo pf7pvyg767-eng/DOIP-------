@@ -59,11 +59,12 @@ public sealed class ReadDataByIdentifierService : IUdsService
         for (var index = 0; index < requestedDids.Count; index++)
         {
             var did = requestedDids[index];
-            didRuntimeStore.TryRead(did, out var value);
+            didRuntimeStore.TrySample(did, out var sample);
+            DidRuntimeStore.TryParseHexBytes(sample.RawValue, out var value);
             responseBytes.Add((byte)(did >> 8));
             responseBytes.Add((byte)(did & 0xFF));
-            responseBytes.AddRange(value);
-            await PublishDidReadAsync(context, did, 2 + value.Length, index, cancellationToken);
+            responseBytes.AddRange(value!);
+            await PublishDidReadAsync(context, sample, 2 + value!.Length, index, cancellationToken);
         }
 
         return [new RawUdsResponse([.. responseBytes])];
@@ -82,7 +83,7 @@ public sealed class ReadDataByIdentifierService : IUdsService
 
     private ValueTask PublishDidReadAsync(
         UdsContext context,
-        ushort did,
+        DidRuntimeSample sample,
         int responseLength,
         int requestIndex,
         CancellationToken cancellationToken)
@@ -100,10 +101,14 @@ public sealed class ReadDataByIdentifierService : IUdsService
                     ["remoteEndpoint"] = context.RemoteEndpoint,
                     ["testerLogicalAddress"] = context.TesterLogicalAddress,
                     ["ecuLogicalAddress"] = context.EcuLogicalAddress,
-                    ["did"] = FormatDid(did),
-                    ["didId"] = FormatDid(did),
+                    ["did"] = sample.Did,
+                    ["didId"] = sample.Did,
                     ["responseLength"] = responseLength,
                     ["requestIndex"] = requestIndex,
+                    ["rawValue"] = sample.RawValue,
+                    ["numericValue"] = sample.NumericValue,
+                    ["providerType"] = sample.ProviderType,
+                    ["sampledAt"] = sample.SampledAt,
                 }),
             cancellationToken);
     }

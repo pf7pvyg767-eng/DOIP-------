@@ -34,6 +34,30 @@ export interface ConfigSummary {
 export interface DashboardState {
   health: HealthResponse;
   config: ConfigSummary;
+  runtimeSummary?: RuntimeSummaryResponse | null;
+}
+
+export interface RuntimeSummaryResponse {
+  webApiListenAddress: string;
+  webApiPort: number;
+  webApiEndpoint: string;
+  doipUdpPort: number;
+  doipTcpPort: number;
+  doipTlsPort: number;
+  tlsEnabled: boolean;
+  vin: string;
+  ecuLogicalAddress: string;
+  testerSourceAddressWhitelist: string[];
+  configPath?: string | null;
+  startedAt: string;
+  processId: number;
+  activeConnectionCount: number;
+}
+
+export interface RuntimeShutdownResponse {
+  accepted: boolean;
+  alreadyRequested: boolean;
+  requestedAt: string;
 }
 
 export interface RuntimeMetricsSnapshot {
@@ -121,6 +145,7 @@ export interface DidSummary {
   name?: string | null;
   valueEncoding: string;
   value: string;
+  valueProvider?: DidValueProviderConfig | null;
   writable: boolean;
   expectedLength?: number | null;
   allowedWriteSessions: string[];
@@ -128,10 +153,38 @@ export interface DidSummary {
   permissionSummary: string;
 }
 
+export type DidProviderType = "static" | "random" | "sine" | "linear";
+
+export interface DidValueProviderConfig {
+  type?: DidProviderType | string | null;
+  numericType?: string | null;
+  min?: number | null;
+  max?: number | null;
+  amplitude?: number | null;
+  offset?: number | null;
+  periodMs?: number | null;
+  slopePerSecond?: number | null;
+  seed?: number | null;
+}
+
 export interface DidValueUpdateRequest {
   valueEncoding: "hex";
   value: string;
   persist: boolean;
+}
+
+export interface DidProviderUpdateRequest {
+  valueProvider: DidValueProviderConfig;
+  persist: boolean;
+}
+
+export interface DidRuntimeSample {
+  did: string;
+  name?: string | null;
+  rawValue: string;
+  numericValue?: number | null;
+  providerType: string;
+  sampledAt: string;
 }
 
 export interface DtcSummary {
@@ -243,6 +296,25 @@ export async function loadDashboardState(): Promise<DashboardState> {
   };
 }
 
+export async function loadRuntimeSummary(): Promise<RuntimeSummaryResponse> {
+  return getJson<RuntimeSummaryResponse>("/api/runtime/summary");
+}
+
+export async function requestRuntimeShutdown(): Promise<RuntimeShutdownResponse> {
+  const response = await fetch("/api/runtime/shutdown", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Runtime shutdown request failed."));
+  }
+
+  return (await response.json()) as RuntimeShutdownResponse;
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, {
     headers: {
@@ -283,6 +355,10 @@ export async function loadDids(): Promise<DidSummary[]> {
   return getJson<DidSummary[]>("/api/dids");
 }
 
+export async function loadDidSamples(): Promise<DidRuntimeSample[]> {
+  return getJson<DidRuntimeSample[]>("/api/dids/samples");
+}
+
 export async function updateDidValue(did: string, body: DidValueUpdateRequest): Promise<void> {
   const response = await fetch(`/api/dids/${encodeURIComponent(did.replace(/^0x/i, ""))}/value`, {
     method: "PUT",
@@ -304,6 +380,21 @@ export async function updateDidValue(did: string, body: DidValueUpdateRequest): 
     }
 
     throw new Error(message);
+  }
+}
+
+export async function updateDidProvider(did: string, body: DidProviderUpdateRequest): Promise<void> {
+  const response = await fetch(`/api/dids/${encodeURIComponent(did.replace(/^0x/i, ""))}/provider`, {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `DID provider update failed with HTTP ${response.status}.`));
   }
 }
 

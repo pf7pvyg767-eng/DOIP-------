@@ -153,6 +153,122 @@ public class ConfigTests
     }
 
     [Fact]
+    public async Task DidValueProviderLoadsSavesAndValidates()
+    {
+        var path = CreateTempConfigPath();
+        var store = new ConfigStore();
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
+            new DidConfig
+            {
+                Identifier = "0xF192",
+                Name = "Dynamic random byte",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "random",
+                    NumericType = "uint8",
+                    Min = 10,
+                    Max = 20,
+                    Seed = 1234,
+                },
+            },
+        ];
+
+        await store.SaveAsync(path, config);
+        var reloaded = await store.LoadAsync(path);
+        var validation = ConfigValidator.Validate(reloaded);
+
+        Assert.True(validation.IsValid);
+        var provider = Assert.Single(reloaded.Uds.Dids).ValueProvider;
+        Assert.NotNull(provider);
+        Assert.Equal("random", provider!.Type);
+        Assert.Equal("uint8", provider.NumericType);
+        Assert.Equal(10, provider.Min);
+        Assert.Equal(20, provider.Max);
+        Assert.Equal(1234, provider.Seed);
+    }
+
+    [Fact]
+    public async Task SampleConfigurationContainsValidDynamicDidExamples()
+    {
+        var samplePath = FindRepoFile("sample-config/default.simulator.json");
+
+        var config = await new ConfigStore().LoadAsync(samplePath);
+        var validation = ConfigValidator.Validate(config);
+        var dynamicDids = config.Uds.Dids
+            .Where(did => did.ValueProvider is not null && !ConfigValidator.IsStaticDid(did))
+            .ToArray();
+
+        Assert.True(validation.IsValid);
+        Assert.True(dynamicDids.Length >= 2);
+    }
+
+
+    [Fact]
+    public void DidValueProviderValidationReturnsFieldSpecificErrors()
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
+            new DidConfig
+            {
+                Identifier = "0xF192",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "random",
+                    NumericType = "uint8",
+                    Min = 20,
+                    Max = 10,
+                },
+            },
+            new DidConfig
+            {
+                Identifier = "0xF193",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "sine",
+                    NumericType = "uint8",
+                    Amplitude = 10,
+                    Offset = 20,
+                    PeriodMs = 0,
+                },
+            },
+            new DidConfig
+            {
+                Identifier = "0xF194",
+                Writable = true,
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "linear",
+                    NumericType = "uint16",
+                    Offset = 1,
+                    SlopePerSecond = 2,
+                },
+            },
+            new DidConfig
+            {
+                Identifier = "0xF195",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "linear",
+                    NumericType = "float32",
+                    Offset = 1,
+                    SlopePerSecond = 2,
+                },
+            },
+        ];
+
+        var validation = ConfigValidator.Validate(config);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[0].valueProvider.max");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[1].valueProvider.periodMs");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[2].writable");
+        Assert.Contains(validation.Errors, error => error.Field == "uds.dids[3].valueProvider.numericType");
+    }
+
+    [Fact]
     public void SecurityAccessValidationReturnsFieldSpecificErrors()
     {
         var config = SimulatorConfig.CreateDefault();
@@ -382,5 +498,22 @@ public class ConfigTests
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         return Path.Combine(directory, "simulator.json");
+    }
+
+    private static string FindRepoFile(string relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, relativePath);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException($"Could not find repository file '{relativePath}'.");
     }
 }

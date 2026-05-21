@@ -157,6 +157,239 @@ public class DidsApiTests
         }
     }
 
+    [Fact]
+    public async Task DynamicDidIsVisibleThroughGetDidsAndReadDataByIdentifier()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-05-21T00:00:00Z"));
+        await using var app = CreateApp(out var baseAddress, out _, out var didStore, out _, config =>
+        {
+            config.Uds.Dids.Add(new DidConfig
+            {
+                Identifier = "0xF192",
+                Name = "Dynamic linear",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "linear",
+                    NumericType = "uint16",
+                    Offset = 100,
+                    SlopePerSecond = 2,
+                },
+            });
+        }, timeProvider);
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+            var readService = new ReadDataByIdentifierService(didStore);
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+            var dids = await client.GetFromJsonAsync<DidRuntimeSnapshot[]>("/api/dids");
+            var readResponses = await readService.HandleAsync(
+                new UdsRequest(0x22, [0xF1, 0x92]),
+                new UdsContext());
+
+            Assert.Equal("006E", Assert.Single(dids!, item => item.Did == "0xF192").Value);
+            Assert.Equal([0x62, 0xF1, 0x92, 0x00, 0x6E], Assert.Single(readResponses).ToBytes());
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetDidSampleReturnsCurrentDynamicSample()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-05-21T00:00:00Z"));
+        await using var app = CreateApp(out var baseAddress, out _, out _, out _, config =>
+        {
+            config.Uds.Dids.Add(new DidConfig
+            {
+                Identifier = "0xF192",
+                Name = "Dynamic linear",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "linear",
+                    NumericType = "uint16",
+                    Offset = 100,
+                    SlopePerSecond = 2,
+                },
+            });
+        }, timeProvider);
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+            var sample = await client.GetFromJsonAsync<DidRuntimeSample>("/api/dids/0xF192/sample");
+
+            Assert.NotNull(sample);
+            Assert.Equal("0xF192", sample.Did);
+            Assert.Equal("Dynamic linear", sample.Name);
+            Assert.Equal("006E", sample.RawValue);
+            Assert.Equal(110, sample.NumericValue);
+            Assert.Equal("linear", sample.ProviderType);
+            Assert.Equal(DateTimeOffset.Parse("2026-05-21T00:00:05Z"), sample.SampledAt);
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetDidSampleReturnsNotFoundForUnknownDidAndBadRequestForInvalidDid()
+    {
+        await using var app = CreateApp(out var baseAddress, out _);
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+
+            var unknown = await client.GetAsync("/api/dids/0xF199/sample");
+            var invalid = await client.GetAsync("/api/dids/not-a-did/sample");
+
+            Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetDidSamplesReturnsStaticAndDynamicSamplesWithoutDiagnosticTraffic()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-05-21T00:00:00Z"));
+        await using var app = CreateApp(out var baseAddress, out _, out _, out _, config =>
+        {
+            config.Uds.Dids.Add(new DidConfig
+            {
+                Identifier = "0xF192",
+                Name = "Dynamic linear",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "linear",
+                    NumericType = "uint16",
+                    Offset = 100,
+                    SlopePerSecond = 2,
+                },
+            });
+        }, timeProvider);
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+            timeProvider.Advance(TimeSpan.FromSeconds(5));
+
+            var samples = await client.GetFromJsonAsync<DidRuntimeSample[]>("/api/dids/samples");
+
+            Assert.NotNull(samples);
+            var staticSample = Assert.Single(samples, item => item.Did == "0xF190");
+            var dynamicSample = Assert.Single(samples, item => item.Did == "0xF192");
+            Assert.Equal("010203", staticSample.RawValue);
+            Assert.Null(staticSample.NumericValue);
+            Assert.Equal("static", staticSample.ProviderType);
+            Assert.Equal("006E", dynamicSample.RawValue);
+            Assert.Equal(110, dynamicSample.NumericValue);
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PutDidProviderUpdatesRuntimeReadsWithoutRestart()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-05-21T00:00:00Z"));
+        await using var app = CreateApp(out var baseAddress, out _, out var didStore, out _, timeProvider: timeProvider);
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+            var readService = new ReadDataByIdentifierService(didStore);
+
+            var response = await client.PutAsJsonAsync(
+                "/api/dids/F190/provider",
+                new DidProviderUpdateRequest(
+                    new DidValueProviderConfig
+                    {
+                        Type = "sine",
+                        NumericType = "uint16",
+                        Amplitude = 10,
+                        Offset = 100,
+                        PeriodMs = 1000,
+                    },
+                    Persist: false));
+            timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+            var readResponses = await readService.HandleAsync(
+                new UdsRequest(0x22, [0xF1, 0x90]),
+                new UdsContext());
+            var dids = await client.GetFromJsonAsync<DidRuntimeSnapshot[]>("/api/dids");
+
+            Assert.True(response.IsSuccessStatusCode);
+            Assert.Equal([0x62, 0xF1, 0x90, 0x00, 0x6E], Assert.Single(readResponses).ToBytes());
+            var did = Assert.Single(dids!, item => item.Did == "0xF190");
+            Assert.False(did.Writable);
+            Assert.Equal("sine", did.ValueProvider!.Type);
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PutDidProviderRejectsInvalidProviderAndUnknownDid()
+    {
+        await using var app = CreateApp(out var baseAddress, out _);
+        await app.StartAsync();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = baseAddress };
+
+            var invalid = await client.PutAsJsonAsync(
+                "/api/dids/F190/provider",
+                new DidProviderUpdateRequest(
+                    new DidValueProviderConfig
+                    {
+                        Type = "sine",
+                        NumericType = "uint16",
+                        Amplitude = 10,
+                        Offset = 100,
+                        PeriodMs = 0,
+                    },
+                    Persist: false));
+            var unknown = await client.PutAsJsonAsync(
+                "/api/dids/F199/provider",
+                new DidProviderUpdateRequest(
+                    new DidValueProviderConfig
+                    {
+                        Type = "linear",
+                        NumericType = "uint16",
+                        Offset = 100,
+                        SlopePerSecond = 1,
+                    },
+                    Persist: false));
+
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        }
+        finally
+        {
+            await app.StopAsync();
+        }
+    }
+
     private static WebApplication CreateApp(out Uri baseAddress, out string configPath)
     {
         return CreateApp(out baseAddress, out configPath, out _, out _);
@@ -166,7 +399,9 @@ public class DidsApiTests
         out Uri baseAddress,
         out string configPath,
         out DidRuntimeStore didStore,
-        out EcuRuntimeState ecuState)
+        out EcuRuntimeState ecuState,
+        Action<SimulatorConfig>? configure = null,
+        TimeProvider? timeProvider = null)
     {
         var port = GetFreeLoopbackPort();
         baseAddress = new Uri($"http://127.0.0.1:{port}");
@@ -191,9 +426,10 @@ public class DidsApiTests
                 Value = "0102",
             },
         ];
+        configure?.Invoke(config);
         var configStore = new ConfigStore();
         configStore.SaveAsync(configPath, config).GetAwaiter().GetResult();
-        didStore = new DidRuntimeStore(config, configPath, configStore);
+        didStore = new DidRuntimeStore(config, configPath, configStore, timeProvider: timeProvider);
         ecuState = new EcuRuntimeState(0x0E00);
         return WebApiApplication.Create(
             [],
@@ -215,5 +451,25 @@ public class DidsApiTests
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         return Path.Combine(directory, "simulator.json");
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset now;
+
+        public ManualTimeProvider(DateTimeOffset now)
+        {
+            this.now = now;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return now;
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            now += duration;
+        }
     }
 }

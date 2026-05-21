@@ -98,6 +98,10 @@ public class ReadDataByIdentifierServiceTests
         Assert.Equal("0xF191", didEvents[0].Data!["didId"]);
         Assert.Equal(4, didEvents[0].Data!["responseLength"]);
         Assert.Equal(0, didEvents[0].Data!["requestIndex"]);
+        Assert.Equal("AABB", didEvents[0].Data!["rawValue"]);
+        Assert.Null(didEvents[0].Data!["numericValue"]);
+        Assert.Equal("static", didEvents[0].Data!["providerType"]);
+        Assert.IsType<DateTimeOffset>(didEvents[0].Data!["sampledAt"]);
         Assert.Equal("0xF190", didEvents[1].Data!["did"]);
         Assert.Equal("0xF190", didEvents[1].Data!["didId"]);
         Assert.Equal(5, didEvents[1].Data!["responseLength"]);
@@ -135,6 +139,46 @@ public class ReadDataByIdentifierServiceTests
         Assert.Equal([0x62, 0xF1, 0x90, 0x01, 0x02, 0x03], Assert.Single(unlockedResponses).ToBytes());
     }
 
+    [Fact]
+    public async Task DynamicDidResponseUsesRuntimeStoreBytes()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-05-21T00:00:00Z"));
+        var service = CreateDynamicService(timeProvider);
+
+        var startResponses = await service.HandleAsync(
+            new UdsRequest(0x22, [0xF1, 0x92]),
+            new UdsContext(ConnectionId: "conn_000001"));
+        timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+        var quarterResponses = await service.HandleAsync(
+            new UdsRequest(0x22, [0xF1, 0x92]),
+            new UdsContext(ConnectionId: "conn_000001"));
+
+        Assert.Equal([0x62, 0xF1, 0x92, 0x00, 0x64], Assert.Single(startResponses).ToBytes());
+        Assert.Equal([0x62, 0xF1, 0x92, 0x00, 0x6E], Assert.Single(quarterResponses).ToBytes());
+    }
+
+    [Fact]
+    public async Task DynamicDidReadEventIncludesNumericSampleData()
+    {
+        var sink = new CapturingEventSink();
+        var eventPublisher = new RuntimeEventBus([sink]);
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-05-21T00:00:00Z"));
+        var service = CreateDynamicService(timeProvider, eventPublisher);
+
+        timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+        await service.HandleAsync(
+            new UdsRequest(0x22, [0xF1, 0x92]),
+            new UdsContext(ConnectionId: "conn_000001"));
+
+        var didEvent = Assert.Single(sink.Events, item => item.Name == "uds.did.read");
+        Assert.Equal("0xF192", didEvent.Data!["did"]);
+        Assert.Equal("006E", didEvent.Data!["rawValue"]);
+        Assert.Equal(110d, didEvent.Data!["numericValue"]);
+        Assert.Equal("sine", didEvent.Data!["providerType"]);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-21T00:00:00.250Z"), didEvent.Data!["sampledAt"]);
+        Assert.Equal("conn_000001", didEvent.Data!["connectionId"]);
+    }
+
     private static ReadDataByIdentifierService CreateService(
         IRuntimeEventPublisher? eventPublisher = null,
         EcuRuntimeState? ecuState = null,
@@ -161,5 +205,55 @@ public class ReadDataByIdentifierServiceTests
         ];
         var store = new DidRuntimeStore(config, "unused.json", new ConfigStore(), eventPublisher);
         return new ReadDataByIdentifierService(store, ecuState, eventPublisher);
+    }
+
+    private static ReadDataByIdentifierService CreateDynamicService(
+        TimeProvider timeProvider,
+        IRuntimeEventPublisher? eventPublisher = null)
+    {
+        var config = SimulatorConfig.CreateDefault();
+        config.Uds.Dids =
+        [
+            new DidConfig
+            {
+                Identifier = "0xF192",
+                Name = "Dynamic",
+                ValueProvider = new DidValueProviderConfig
+                {
+                    Type = "sine",
+                    NumericType = "uint16",
+                    Amplitude = 10,
+                    Offset = 100,
+                    PeriodMs = 1000,
+                },
+            },
+        ];
+        var store = new DidRuntimeStore(
+            config,
+            "unused.json",
+            new ConfigStore(),
+            eventPublisher,
+            timeProvider: timeProvider);
+        return new ReadDataByIdentifierService(store, eventPublisher);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset now;
+
+        public ManualTimeProvider(DateTimeOffset now)
+        {
+            this.now = now;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return now;
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            now += duration;
+        }
     }
 }

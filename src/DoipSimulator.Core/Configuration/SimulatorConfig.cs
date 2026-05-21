@@ -185,6 +185,8 @@ public sealed class DidConfig
 
     public string? Value { get; set; }
 
+    public DidValueProviderConfig? ValueProvider { get; set; }
+
     public bool Writable { get; set; }
 
     public int? WriteLength { get; set; }
@@ -194,6 +196,27 @@ public sealed class DidConfig
     public string? RequiredSecurityState { get; set; }
 
     public int? RequiredSecurityLevel { get; set; }
+}
+
+public sealed class DidValueProviderConfig
+{
+    public string? Type { get; set; }
+
+    public string? NumericType { get; set; }
+
+    public double? Min { get; set; }
+
+    public double? Max { get; set; }
+
+    public double? Amplitude { get; set; }
+
+    public double? Offset { get; set; }
+
+    public int? PeriodMs { get; set; }
+
+    public double? SlopePerSecond { get; set; }
+
+    public int? Seed { get; set; }
 }
 
 public sealed class DtcConfig

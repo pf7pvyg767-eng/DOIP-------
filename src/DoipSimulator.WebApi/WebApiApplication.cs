@@ -10,6 +10,7 @@ using DoipSimulator.Core.Observability.Pcap;
 using DoipSimulator.Core.RuntimeEvents;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.Hosting;
 
 namespace DoipSimulator.WebApi;
 
@@ -20,6 +21,22 @@ public sealed record WebApiRuntimeOptions(
     string? ConfigPath = null);
 
 public sealed record HealthResponse(string Status, string Version, DateTimeOffset StartedAt);
+
+public sealed record RuntimeSummaryResponse(
+    string WebApiListenAddress,
+    int WebApiPort,
+    string WebApiEndpoint,
+    int DoipUdpPort,
+    int DoipTcpPort,
+    int DoipTlsPort,
+    bool TlsEnabled,
+    string Vin,
+    string EcuLogicalAddress,
+    IReadOnlyList<string> TesterSourceAddressWhitelist,
+    string? ConfigPath,
+    DateTimeOffset StartedAt,
+    int ProcessId,
+    int ActiveConnectionCount);
 
 public sealed record ConfigValidationErrorResponse(
     string Code,
@@ -38,6 +55,8 @@ public sealed record EcuStateSnapshot(
 public sealed record DidValueUpdateRequest(string? ValueEncoding, string? Value, bool Persist = false);
 
 public sealed record DidValueUpdateResponse(string Did, string ValueEncoding, string Value, bool Persisted);
+
+public sealed record DidProviderUpdateRequest(DidValueProviderConfig ValueProvider, bool Persist = false);
 
 public sealed record DidErrorResponse(string Code, string Message);
 
@@ -71,7 +90,8 @@ public static class WebApiApplication
         ControlServiceStateStore? controlServiceStateStore = null,
         IPcapRecorder? pcapRecorder = null,
         RuntimeMetricsCollector? metricsCollector = null,
-        FaultRuntimeState? faultRuntimeState = null)
+        FaultRuntimeState? faultRuntimeState = null,
+        IRuntimeShutdownSignal? runtimeShutdownSignal = null)
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseUrls($"http://{options.ListenAddress}:{options.Port}");
@@ -99,6 +119,7 @@ public static class WebApiApplication
             eventPublisher);
         var pcap = pcapRecorder ?? NullPcapRecorder.Instance;
         var metrics = metricsCollector ?? new RuntimeMetricsCollector(connections, eventHub);
+        var shutdownHandler = new RuntimeShutdownRequestHandler(runtimeShutdownSignal ?? NullRuntimeShutdownSignal.Instance);
 
         app.UseWebSockets();
         UseWebConsoleStaticFiles(app);
@@ -114,6 +135,17 @@ public static class WebApiApplication
             var config = await store.LoadAsync(configPath, cancellationToken);
             return Results.Ok(config);
         });
+
+        app.MapGet("/api/runtime/summary", async (CancellationToken cancellationToken) =>
+        {
+            var config = await store.LoadAsync(configPath, cancellationToken);
+            return Results.Ok(ToRuntimeSummary(options, config, configPath, connections));
+        });
+
+        app.MapPost("/api/runtime/shutdown", async (CancellationToken cancellationToken) =>
+            Results.Accepted(
+                "/api/runtime/shutdown",
+                await shutdownHandler.RequestAsync(eventPublisher, pcap, cancellationToken)));
 
         app.MapPost("/api/import/odx", async (HttpRequest request, CancellationToken cancellationToken) =>
             await ImportDiagnosticFileAsync(
@@ -243,6 +275,20 @@ public static class WebApiApplication
 
         app.MapGet("/api/dids", () => Results.Ok(didStore.List()));
 
+        app.MapGet("/api/dids/samples", () => Results.Ok(didStore.ListSamples()));
+
+        app.MapGet("/api/dids/{did}/sample", (string did) =>
+        {
+            if (!TryParseDidRouteValue(did, out var didId))
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_DID", "DID route value must be a 16-bit hex identifier."));
+            }
+
+            return didStore.TrySample(didId, out var sample)
+                ? Results.Ok(sample)
+                : Results.NotFound(new DidErrorResponse("UnknownDid", "DID is not configured."));
+        });
+
         app.MapGet("/api/dtcs", () => Results.Ok(dtcStore.List()));
 
         app.MapGet("/api/control-services", () => Results.Ok(controlStore.GetSnapshot()));
@@ -357,6 +403,40 @@ public static class WebApiApplication
                 body.Persist));
         });
 
+        app.MapPut("/api/dids/{did}/provider", async (
+            string did,
+            HttpRequest request,
+            CancellationToken cancellationToken) =>
+        {
+            DidProviderUpdateRequest? body;
+            try
+            {
+                body = await request.ReadFromJsonAsync<DidProviderUpdateRequest>(JsonOptions, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_JSON", "Request body must be valid JSON."));
+            }
+
+            if (body?.ValueProvider is null)
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_DID_PROVIDER", "DID valueProvider is required."));
+            }
+
+            if (!TryParseDidRouteValue(did, out var didId))
+            {
+                return Results.BadRequest(new DidErrorResponse("INVALID_DID", "DID route value must be a 16-bit hex identifier."));
+            }
+
+            var result = await didStore.UpdateProviderAsync(
+                didId,
+                body.ValueProvider,
+                body.Persist,
+                cancellationToken);
+
+            return ToDidProviderUpdateResult(result);
+        });
+
         app.MapPut("/api/config", async (HttpRequest request, CancellationToken cancellationToken) =>
         {
             SimulatorConfig? config;
@@ -412,7 +492,10 @@ public static class WebApiApplication
 
             using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
             using var subscription = eventHub.Subscribe();
-            using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            var applicationLifetime = context.RequestServices.GetRequiredService<IHostApplicationLifetime>();
+            using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(
+                context.RequestAborted,
+                applicationLifetime.ApplicationStopping);
             var cancellationToken = streamCts.Token;
             var receiveTask = WatchClientDisconnectAsync(webSocket, streamCts);
 
@@ -677,6 +760,24 @@ public static class WebApiApplication
         };
     }
 
+    private static IResult ToDidProviderUpdateResult(DidProviderUpdateResult result)
+    {
+        if (result.Succeeded)
+        {
+            return Results.Ok(result.Snapshot);
+        }
+
+        if (result.Failure == DidProviderUpdateFailure.UnknownDid)
+        {
+            return Results.NotFound(new DidErrorResponse(result.Failure.ToString(), result.Message ?? "DID is not configured."));
+        }
+
+        var message = result.Errors is { Count: > 0 }
+            ? string.Join("; ", result.Errors.Select(error => $"{error.Field}: {error.Message}"))
+            : result.Message ?? "DID value provider configuration is invalid.";
+        return Results.BadRequest(new DidErrorResponse(result.Failure.ToString(), message));
+    }
+
     private static IResult ToDtcOperationError(DtcOperationResult result)
     {
         var response = new DtcErrorResponse(result.Failure.ToString(), result.Message ?? "DTC operation rejected.");
@@ -696,6 +797,29 @@ public static class WebApiApplication
             state.SecurityStateSummary,
             state.LastTesterPresentAt,
             state.GetTesterPresentTimingSnapshot(timeout.Enabled, timeout.TimeoutMs));
+    }
+
+    private static RuntimeSummaryResponse ToRuntimeSummary(
+        WebApiRuntimeOptions options,
+        SimulatorConfig config,
+        string configPath,
+        ConnectionRegistry connections)
+    {
+        return new RuntimeSummaryResponse(
+            options.ListenAddress,
+            options.Port,
+            $"http://{options.ListenAddress}:{options.Port}",
+            config.Network.DoipUdpPort,
+            config.Network.DoipTcpPort,
+            config.Network.DoipTlsPort,
+            config.Tls.Enabled,
+            config.Entity.Vin,
+            config.Entity.LogicalAddress,
+            config.Network.SourceAddressWhitelist.ToArray(),
+            configPath,
+            options.StartedAt,
+            Environment.ProcessId,
+            connections.ActiveCount);
     }
 
     private static string FormatSession(DiagnosticSession session)

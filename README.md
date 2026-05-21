@@ -55,6 +55,24 @@ npm run build
 .\scripts\run-host.ps1 run
 ```
 
+## Phase 2 functional smoke
+
+Start the Host with a disposable development configuration, then run:
+
+```powershell
+.\scripts\phase2-functional-smoke.ps1
+```
+
+The smoke script checks API health, runtime summary, UDP vehicle discovery, TCP Routing Activation, static and dynamic DID `0xF190`, the DID sample API, and the runtime shutdown API. Use `-SkipShutdown` when you want the runtime to remain open after the checks.
+
+MSI installation, full browser UI E2E, and report generation are intentionally excluded from this lightweight development loop.
+
+For the runtime cockpit UI smoke:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\web-console-runtime-cockpit-smoke.ps1
+```
+
 ## Scope note
 
 This skeleton intentionally does not implement full ECU configuration loading, DoIP network services, UDS, DID, DTC, Flash, TLS, PCAP, real Web console business pages, database access, or external service integration.
