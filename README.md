@@ -16,6 +16,7 @@ scripts/
   build.ps1                  Unified backend and frontend build.
   test.ps1                   Backend test entrypoint.
   run-host.ps1               Host CLI wrapper.
+  package-portable.ps1       Self-contained unzip-and-run Windows package.
 ```
 
 ## Backend commands
@@ -65,6 +66,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-msi.ps1
 
 The package is written to `artifacts\installer\msi`. The installed shortcut starts the simulator with the bundled `simulator-config.json` and opens `http://127.0.0.1:5080`. The MSI installs Windows Firewall rules for DoIP TCP/UDP `13400` and DoIP TLS TCP `3496`; the Web Console remains bound to local loopback by default.
 
+## Portable zip packaging
+
+To build a self-contained Windows x64 zip that can be shared directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-portable.ps1 -DotnetPath C:\Users\admin\.dotnet\dotnet.exe
+```
+
+The package is written to:
+
+```text
+artifacts\portable\doip-simulator-0.2.0-win-x64-portable.zip
+```
+
+Recipients can unzip it and double-click `Start-DOIP-Simulator.cmd`. The portable package includes the Web Console production build, the simulator executable, the bundled runtime, and `simulator-config.json` with the dynamic sample DIDs `0xF191` through `0xF197`.
+
 ## Phase 2 functional smoke
 
 Start the Host with a disposable development configuration, then run:
@@ -100,4 +117,4 @@ The script preflights the matching Web API (`13400` -> `5080`, `13401` -> `5081`
 
 ## Scope note
 
-This skeleton intentionally does not implement full ECU configuration loading, DoIP network services, UDS, DID, DTC, Flash, TLS, PCAP, real Web console business pages, database access, or external service integration.
+This is still an MVP simulator rather than a full OEM ECU platform. It supports the local Standard ECU workflow, dynamic DID providers, common UDS service MVPs, observability, PCAP, fault controls, ODX/PDX subset import, Web Console operation, and portable packaging. It does not implement full OEM security algorithms, complex routine scripts, real flashing storage, database integration, or external services.
